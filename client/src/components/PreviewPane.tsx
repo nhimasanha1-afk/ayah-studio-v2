@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { useBackgroundLibrary, useChapters, useFirstVerse } from '../lib/hooks';
 import { badgePositionStyle, introTextTopPct, scrimStyle } from '../lib/previewLayout';
 import { FONT_REGISTRY } from '../lib/types';
+import { isRtlScript, scriptForLanguage, TRANSLATION_SCRIPT_FONTS } from '../lib/translationFonts';
 import { useExportConfigStore } from '../state/exportConfigStore';
+
+/** Mirrors server/src/lib/assBuilder.js's resolveTranslationFontFamily. */
+function resolveTranslationFontFamily(latinFont: 'noto-sans' | 'inter', script: string): string {
+  if (script === 'latin' || script === 'cyrillic') return FONT_REGISTRY.latin[latinFont].family;
+  if (script === 'arabic') return FONT_REGISTRY.arabic['noto-naskh'].family;
+  return TRANSLATION_SCRIPT_FONTS[script]?.family ?? FONT_REGISTRY.latin[latinFont].family;
+}
 
 const LOGO_SHAPE_RADIUS: Record<string, string> = {
   square: '0',
@@ -13,6 +21,7 @@ const LOGO_SHAPE_RADIUS: Record<string, string> = {
 export function PreviewPane() {
   const chapterId = useExportConfigStore((s) => s.chapterId);
   const translationId = useExportConfigStore((s) => s.translationId);
+  const translationLanguage = useExportConfigStore((s) => s.translationLanguage);
   const style = useExportConfigStore((s) => s.style);
   const intro = useExportConfigStore((s) => s.intro);
   const background = useExportConfigStore((s) => s.background);
@@ -33,6 +42,8 @@ export function PreviewPane() {
   }, [background.clipIds, library.data]);
 
   const arabicWords = verse.data?.textUthmani.split(/\s+/) ?? [];
+  const translationScript = scriptForLanguage(translationLanguage);
+  const translationFontFamily = resolveTranslationFontFamily(style.typography.latinFont, translationScript);
   const [videoFailed, setVideoFailed] = useState(false);
   useEffect(() => setVideoFailed(false), [firstClipUrl]);
 
@@ -193,8 +204,9 @@ export function PreviewPane() {
                       ))}
                     </p>
                     <p
+                      dir={isRtlScript(translationScript) ? 'rtl' : undefined}
                       style={{
-                        fontFamily: FONT_REGISTRY.latin[style.typography.latinFont].family,
+                        fontFamily: translationFontFamily,
                         fontSize: Math.round(style.typography.translationFontSize * 0.6),
                         color: style.colors.translationTextColor,
                       }}

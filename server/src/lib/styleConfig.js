@@ -9,6 +9,35 @@ export const FONT_REGISTRY = {
   },
 };
 
+// One font per non-Latin/non-Cyrillic/non-Arabic script, auto-selected for
+// the Translation caption line based on the chosen translation's actual
+// language (see translationFonts.js) -- not user-choosable like
+// FONT_REGISTRY.latin, since we only bundle one font per script. Cyrillic
+// reuses FONT_REGISTRY.latin (Noto Sans covers Latin+Cyrillic+Greek);
+// Arabic-script translations (Urdu, Persian, Pashto, Sindhi, Dari, Uyghur,
+// Kurdish) reuse FONT_REGISTRY.arabic's noto-naskh regardless of which
+// Quranic Arabic font the user picked, since Naskh has broader Arabic
+// Extended-A coverage than Amiri.
+export const TRANSLATION_SCRIPT_FONTS = {
+  bengali: { family: 'Noto Sans Bengali', file: 'NotoSansBengali-Regular.ttf' },
+  devanagari: { family: 'Noto Sans Devanagari', file: 'NotoSansDevanagari-Regular.ttf' },
+  ethiopic: { family: 'Noto Sans Ethiopic', file: 'NotoSansEthiopic-Regular.ttf' },
+  gujarati: { family: 'Noto Sans Gujarati', file: 'NotoSansGujarati-Regular.ttf' },
+  han: { family: 'Noto Sans SC', file: 'NotoSansSC-Regular.ttf' },
+  hangul: { family: 'Noto Sans KR', file: 'NotoSansKR-Regular.ttf' },
+  hebrew: { family: 'Noto Sans Hebrew', file: 'NotoSansHebrew-Regular.ttf' },
+  kana: { family: 'Noto Sans JP', file: 'NotoSansJP-Regular.ttf' },
+  kannada: { family: 'Noto Sans Kannada', file: 'NotoSansKannada-Regular.ttf' },
+  khmer: { family: 'Noto Sans Khmer', file: 'NotoSansKhmer-Regular.ttf' },
+  malayalam: { family: 'Noto Sans Malayalam', file: 'NotoSansMalayalam-Regular.ttf' },
+  nko: { family: 'Noto Sans NKo', file: 'NotoSansNKo-Regular.ttf' },
+  sinhala: { family: 'Noto Sans Sinhala', file: 'NotoSansSinhala-Regular.ttf' },
+  tamil: { family: 'Noto Sans Tamil', file: 'NotoSansTamil-Regular.ttf' },
+  telugu: { family: 'Noto Sans Telugu', file: 'NotoSansTelugu-Regular.ttf' },
+  thaana: { family: 'Noto Sans Thaana', file: 'NotoSansThaana-Regular.ttf' },
+  thai: { family: 'Noto Sans Thai', file: 'NotoSansThai-Regular.ttf' },
+};
+
 export const POSITIONS = ['top-left', 'top-center', 'top-right', 'bottom-left', 'bottom-center', 'bottom-right'];
 export const TEXT_POSITIONS = ['upper-third', 'center', 'lower-third'];
 export const LOGO_SHAPES = ['square', 'circle', 'rounded'];

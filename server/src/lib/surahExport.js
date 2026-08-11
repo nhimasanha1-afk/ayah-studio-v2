@@ -168,6 +168,7 @@ export async function runSurahExport({
   chapterId,
   reciterId = DEFAULT_RECITER_ID,
   translationId = DEFAULT_TRANSLATION_ID,
+  translationLanguage,
   outputPath,
   style: styleOverrides = {},
   intro: introOverrides = {},
@@ -262,7 +263,11 @@ export async function runSurahExport({
 
   const assPath = path.join(TMP_DIR, `captions-${chapterId}-${reciterId}.ass`);
   fs.mkdirSync(TMP_DIR, { recursive: true });
-  fs.writeFileSync(assPath, buildAssSubtitles(shiftedCaptionData, style, { canvasWidth, canvasHeight, scaleFactor }), 'utf8');
+  fs.writeFileSync(
+    assPath,
+    buildAssSubtitles(shiftedCaptionData, style, { canvasWidth, canvasHeight, scaleFactor }, translationLanguage),
+    'utf8'
+  );
 
   report('downloading-background');
   const { inputs: backgroundInputs, backgroundInputLabel, backgroundFilterParts = [] } = await resolveBackground({

@@ -1,6 +1,28 @@
 import { hexToAssColor } from './colorUtils.js';
 import { captionVerticalLayout } from './layout.js';
-import { FONT_REGISTRY } from './styleConfig.js';
+import { FONT_REGISTRY, TRANSLATION_SCRIPT_FONTS } from './styleConfig.js';
+import { scriptForLanguage } from './translationFonts.js';
+
+/**
+ * Resolves the font family for the Translation caption line based on the
+ * actual script the selected translation is written in -- not a fixed
+ * user choice, since Noto Sans/Inter (FONT_REGISTRY.latin) can't render
+ * most non-Latin scripts at all. Cyrillic reuses Noto Sans (it already
+ * covers that script); Arabic-script translations reuse noto-naskh
+ * regardless of the user's chosen Quranic Arabic font. Defaults to the
+ * user's latin font choice when translationLanguage is unset, so existing
+ * callers (tests, older API bodies) keep their current behavior.
+ */
+function resolveTranslationFontFamily(style, translationLanguage) {
+  const script = scriptForLanguage(translationLanguage);
+  if (script === 'latin' || script === 'cyrillic') {
+    return FONT_REGISTRY.latin[style.typography.latinFont].family;
+  }
+  if (script === 'arabic') {
+    return FONT_REGISTRY.arabic['noto-naskh'].family;
+  }
+  return TRANSLATION_SCRIPT_FONTS[script].family;
+}
 
 function formatAssTime(ms) {
   const totalCentiseconds = Math.max(0, Math.round(ms / 10));
@@ -21,9 +43,9 @@ function dialogueLine(style, startMs, endMs, text) {
   return `Dialogue: 0,${formatAssTime(startMs)},${formatAssTime(endMs)},${style},,0,0,0,,${text}`;
 }
 
-function buildHeader(style, canvasWidth, canvasHeight, scaleFactor) {
+function buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationLanguage) {
   const arabicFamily = FONT_REGISTRY.arabic[style.typography.arabicFont].family;
-  const latinFamily = FONT_REGISTRY.latin[style.typography.latinFont].family;
+  const translationFamily = resolveTranslationFontFamily(style, translationLanguage);
 
   const arabicColor = hexToAssColor(style.colors.arabicTextColor);
   const translationColor = hexToAssColor(style.colors.translationTextColor);
@@ -48,7 +70,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Arabic,${arabicFamily},${arabicFontSize},${arabicColor},&H000000FF,${outlineColor},&H00000000,0,0,0,0,100,100,0,0,1,${outlineWidth},${shadowDepth},${alignment},${sideMargin},${sideMargin},${arabicMarginV},1
-Style: Translation,${latinFamily},${translationFontSize},${translationColor},&H000000FF,${outlineColor},&H00000000,0,0,0,0,100,100,0,0,1,${Math.max(1, outlineWidth - 1)},${shadowDepth},${alignment},${translationSideMargin},${translationSideMargin},${translationMarginV},1
+Style: Translation,${translationFamily},${translationFontSize},${translationColor},&H000000FF,${outlineColor},&H00000000,0,0,0,0,100,100,0,0,1,${Math.max(1, outlineWidth - 1)},${shadowDepth},${alignment},${translationSideMargin},${translationSideMargin},${translationMarginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -67,9 +89,18 @@ const TEXT_REVEAL_FADE_MS = 120;
  * shadow (a drop shadow would blur the highlight) while keeping the outline.
  *
  * canvasWidth/canvasHeight/scaleFactor come from the chosen resolution and
- * aspect ratio (see layout.js).
+ * aspect ratio (see layout.js). translationLanguage is the selected
+ * translation's Quran.com `language_name` (e.g. "urdu", "bengali") --
+ * it picks which bundled font renders the Translation line; omitted/unknown
+ * values fall back to the user's chosen Latin font (see
+ * resolveTranslationFontFamily).
  */
-export function buildAssSubtitles(captionData, style, { canvasWidth, canvasHeight, scaleFactor = 1 }) {
+export function buildAssSubtitles(
+  captionData,
+  style,
+  { canvasWidth, canvasHeight, scaleFactor = 1 },
+  translationLanguage
+) {
   const highlightColor = hexToAssColor(style.colors.highlightColor);
   const arabicColor = hexToAssColor(style.colors.arabicTextColor);
   const shadowDepth = Math.round(style.colors.shadowDepth * scaleFactor);
@@ -101,5 +132,5 @@ export function buildAssSubtitles(captionData, style, { canvasWidth, canvasHeigh
     );
   }
 
-  return buildHeader(style, canvasWidth, canvasHeight, scaleFactor) + lines.join('\n') + '\n';
+  return buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationLanguage) + lines.join('\n') + '\n';
 }

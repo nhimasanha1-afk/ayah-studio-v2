@@ -23,6 +23,8 @@ const captionTimingJson = process.argv[10]; // optional path to a JSON file of c
 const captionTiming = captionTimingJson ? JSON.parse(fs.readFileSync(captionTimingJson, 'utf8')) : {};
 const outroJson = process.argv[11]; // optional path to a JSON file of outro overrides
 const outro = outroJson ? JSON.parse(fs.readFileSync(outroJson, 'utf8')) : {};
+const translationId = process.argv[12] ? Number(process.argv[12]) : undefined; // optional Quran.com translation resource id
+const translationLanguage = process.argv[13]; // optional Quran.com language_name, e.g. "urdu" -- picks the Translation caption font
 const outputPath = path.join(outputDir, `surah-${chapterId}-${tag}.mp4`);
 
 console.log(`Running styled surah export for chapter ${chapterId} -> ${outputPath}`);
@@ -38,6 +40,8 @@ const result = await runSurahExport({
   resolution,
   aspectRatio,
   captionTiming,
+  translationId,
+  translationLanguage,
 });
 
 console.log(`\nChapter: ${result.chapter.name_simple} (${result.chapter.name_arabic})`);

@@ -47,6 +47,7 @@ function surahExportOptionsFromBody(body, outputPath) {
     chapterId: Number(body?.chapterId ?? 112),
     reciterId: body?.reciterId ? Number(body.reciterId) : undefined,
     translationId: body?.translationId ? Number(body.translationId) : undefined,
+    translationLanguage: body?.translationLanguage,
     outputPath,
     style: body?.style ?? {},
     intro: body?.intro ?? {},

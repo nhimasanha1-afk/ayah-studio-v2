@@ -14,6 +14,7 @@ export interface SurahExportRequest {
   chapterId: number;
   reciterId?: number;
   translationId?: number;
+  translationLanguage?: string;
   style: StyleConfig;
   intro: IntroConfig;
   outro: OutroConfig;

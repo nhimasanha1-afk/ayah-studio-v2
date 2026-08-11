@@ -22,6 +22,7 @@ interface ExportConfigState {
   chapterId: number;
   reciterId: number;
   translationId: number;
+  translationLanguage: string;
   style: StyleConfig;
   intro: IntroConfig;
   outro: OutroConfig;
@@ -34,7 +35,7 @@ interface ExportConfigState {
 
   setChapterId: (id: number) => void;
   setReciterId: (id: number) => void;
-  setTranslationId: (id: number) => void;
+  setTranslation: (id: number, language: string) => void;
   setResolution: (resolution: Resolution) => void;
   setAspectRatio: (aspectRatio: AspectRatio) => void;
 
@@ -62,6 +63,7 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
   chapterId: 112, // Al-Ikhlas: short default, good first-load experience
   reciterId: 7, // Mishari Rashid al-`Afasy
   translationId: 20, // Saheeh International
+  translationLanguage: 'english',
   style: DEFAULT_STYLE,
   intro: DEFAULT_INTRO,
   outro: DEFAULT_OUTRO,
@@ -74,7 +76,7 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
 
   setChapterId: (chapterId) => set({ chapterId }),
   setReciterId: (reciterId) => set({ reciterId }),
-  setTranslationId: (translationId) => set({ translationId }),
+  setTranslation: (translationId, translationLanguage) => set({ translationId, translationLanguage }),
   setResolution: (resolution) => set({ resolution }),
   setAspectRatio: (aspectRatio) => set({ aspectRatio }),
 

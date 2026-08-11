@@ -20,6 +20,7 @@ export function ExportBar() {
   const chapterId = useExportConfigStore((s) => s.chapterId);
   const reciterId = useExportConfigStore((s) => s.reciterId);
   const translationId = useExportConfigStore((s) => s.translationId);
+  const translationLanguage = useExportConfigStore((s) => s.translationLanguage);
   const style = useExportConfigStore((s) => s.style);
   const intro = useExportConfigStore((s) => s.intro);
   const outro = useExportConfigStore((s) => s.outro);
@@ -56,6 +57,7 @@ export function ExportBar() {
         chapterId,
         reciterId,
         translationId,
+        translationLanguage,
         style,
         intro,
         outro,

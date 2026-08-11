@@ -42,8 +42,12 @@ export async function fetchReciters(): Promise<Reciter[]> {
 }
 
 export async function fetchTranslations(): Promise<Translation[]> {
+  // `language=en` only controls what language Quran.com's own resource
+  // NAME labels come back in -- it does not restrict which languages'
+  // translations are returned. Quran.com genuinely offers ~126 translations
+  // across ~69 languages here; don't filter them down.
   const data = await getJson<{ translations: Translation[] }>(`${QURAN_API_BASE}/resources/translations?language=en`);
-  return data.translations.filter((t) => t.language_name === 'english');
+  return data.translations;
 }
 
 export interface PreviewVerse {
