@@ -1,0 +1,7 @@
+node_modules/
+output/
+tmp/
+.env
+assets/audio/
+assets/backgrounds/
+assets/logos/

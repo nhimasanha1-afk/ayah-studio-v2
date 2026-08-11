@@ -1,0 +1,19 @@
+services:
+  ayah-studio:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      # Optional -- only needed for AI-generated background video. Set it in
+      # a real .env file (or your shell) rather than hardcoding it here.
+      - RUNWAYML_API_SECRET=${RUNWAYML_API_SECRET:-}
+    volumes:
+      - ayah-output:/app/server/output
+      - ayah-assets:/app/server/assets
+      - ayah-tmp:/app/server/tmp
+
+volumes:
+  ayah-output:
+  ayah-assets:
+  ayah-tmp:

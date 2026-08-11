@@ -1,0 +1,28 @@
+node_modules/
+
+# Generated/runtime caches -- all regenerated on demand by the server
+# (ensureAudioCached, ensureBackgroundClipCached, ensureStaticBackground,
+# ensurePlaceholderLogo) or are user-uploaded/generated content, so none of
+# this belongs in source control.
+server/output/
+server/tmp/
+server/assets/audio/
+server/assets/backgrounds/clips/
+server/assets/backgrounds/uploads/
+server/assets/backgrounds/static-placeholder-*.png
+server/assets/logos/uploads/
+server/assets/logos/placeholder-logo-*.png
+
+client/dist/
+client/.vite/
+
+# Secrets -- real values live in a local .env (or the host platform's env
+# var settings), never in git. .env.example documents the required keys.
+.env
+.env.local
+
+*.log
+.DS_Store
+
+# Personal per-machine permission allowlist, not shared project config.
+.claude/settings.local.json

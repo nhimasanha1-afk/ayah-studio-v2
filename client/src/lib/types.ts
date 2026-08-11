@@ -1,0 +1,221 @@
+// Mirrors server/src/lib/styleConfig.js, introTiming.js and surahExport.js
+// exactly, so the JSON sent to POST /api/export/surah needs no translation.
+
+export type ArabicFontKey = 'noto-naskh' | 'amiri';
+export type LatinFontKey = 'noto-sans' | 'inter';
+export type BadgePosition =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+export type TextPosition = 'upper-third' | 'center' | 'lower-third';
+export type LogoShape = 'square' | 'circle' | 'rounded';
+export type SurahBadgeVariant = 'inline' | 'stacked-title-card';
+export type Resolution = '720p' | '1080p';
+export type AspectRatio = '16:9' | '9:16';
+export type TextRevealAnimation = 'none' | 'fade';
+export type VideoFilter = 'none' | 'grayscale' | 'sepia' | 'warm' | 'cool' | 'vintage';
+export type ZoomPanStyle = 'none' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right';
+export type TransitionStyle =
+  | 'fade'
+  | 'dissolve'
+  | 'wipeleft'
+  | 'wiperight'
+  | 'slideleft'
+  | 'slideright'
+  | 'circleopen'
+  | 'pixelize';
+
+export const RESOLUTIONS: Resolution[] = ['720p', '1080p'];
+export const ASPECT_RATIOS: AspectRatio[] = ['16:9', '9:16'];
+export type BackgroundOrder = 'sequential' | 'shuffle';
+export const TEXT_REVEAL_ANIMATIONS: TextRevealAnimation[] = ['none', 'fade'];
+export const VIDEO_FILTERS: VideoFilter[] = ['none', 'grayscale', 'sepia', 'warm', 'cool', 'vintage'];
+export const ZOOM_PAN_STYLES: ZoomPanStyle[] = ['none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-right'];
+export const TRANSITION_STYLES: TransitionStyle[] = [
+  'fade',
+  'dissolve',
+  'wipeleft',
+  'wiperight',
+  'slideleft',
+  'slideright',
+  'circleopen',
+  'pixelize',
+];
+
+export interface StyleConfig {
+  typography: {
+    arabicFont: ArabicFontKey;
+    latinFont: LatinFontKey;
+    arabicFontSize: number;
+    translationFontSize: number;
+  };
+  colors: {
+    arabicTextColor: string;
+    translationTextColor: string;
+    highlightColor: string;
+    outlineColor: string;
+    outlineWidth: number;
+    shadowDepth: number;
+    textPosition: TextPosition;
+    textRevealAnimation: TextRevealAnimation;
+    scrim: { enabled: boolean; color: string; opacity: number };
+    videoFilter: VideoFilter;
+    backgroundBlur: number;
+    backgroundZoomPan: ZoomPanStyle;
+  };
+  badges: {
+    watermark: { enabled: boolean; text: string; opacity: number; color: string; position: BadgePosition; fontSize: number };
+    surahBadge: { enabled: boolean; position: BadgePosition; fontSize: number; variant: SurahBadgeVariant };
+    channelLogo: { enabled: boolean; position: BadgePosition; size: number; shape: LogoShape; logoId: string | null };
+    channelNameBadge: { enabled: boolean; text: string; position: BadgePosition; fontSize: number };
+  };
+}
+
+export const DEFAULT_STYLE: StyleConfig = {
+  typography: {
+    arabicFont: 'noto-naskh',
+    latinFont: 'noto-sans',
+    arabicFontSize: 60,
+    translationFontSize: 32,
+  },
+  colors: {
+    arabicTextColor: '#FFFFFF',
+    translationTextColor: '#E6E6E6',
+    highlightColor: '#FFD700',
+    outlineColor: '#000000',
+    outlineWidth: 2,
+    shadowDepth: 1,
+    textPosition: 'center',
+    textRevealAnimation: 'none',
+    scrim: { enabled: true, color: '#000000', opacity: 0.35 },
+    videoFilter: 'none',
+    backgroundBlur: 0,
+    backgroundZoomPan: 'none',
+  },
+  badges: {
+    watermark: { enabled: false, text: '', opacity: 0.6, color: '#FFFFFF', position: 'bottom-right', fontSize: 22 },
+    surahBadge: { enabled: true, position: 'top-center', fontSize: 22, variant: 'inline' },
+    channelLogo: { enabled: false, position: 'top-left', size: 90, shape: 'circle', logoId: null },
+    channelNameBadge: { enabled: false, text: '', position: 'bottom-left', fontSize: 20 },
+  },
+};
+
+export const POSITIONS: BadgePosition[] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right',
+];
+export const TEXT_POSITIONS: TextPosition[] = ['upper-third', 'center', 'lower-third'];
+export const LOGO_SHAPES: LogoShape[] = ['square', 'circle', 'rounded'];
+
+export const FONT_REGISTRY: {
+  arabic: Record<ArabicFontKey, { family: string; label: string }>;
+  latin: Record<LatinFontKey, { family: string; label: string }>;
+} = {
+  arabic: {
+    'noto-naskh': { family: 'Noto Naskh Arabic', label: 'Noto Naskh Arabic' },
+    amiri: { family: 'Amiri', label: 'Amiri' },
+  },
+  latin: {
+    'noto-sans': { family: 'Noto Sans', label: 'Noto Sans' },
+    inter: { family: 'Inter', label: 'Inter' },
+  },
+};
+
+// Mirrors server/src/lib/videoComposition.js's buildAudioFilterComplex
+// audioSyncOffsetMs/volumeMultiplier -- both apply to the main recitation
+// audio only (never Bismillah), independent of caption timing.
+export interface AudioSyncConfig {
+  offsetMs: number;
+  volumeMultiplier: number;
+}
+
+export const DEFAULT_AUDIO_SYNC: AudioSyncConfig = {
+  offsetMs: 0,
+  volumeMultiplier: 1,
+};
+
+// Mirrors server/src/lib/surahExport.js's captionTiming.displayDelayMs --
+// shifts ONLY caption timing, the intentional mirror of audioSync.offsetMs
+// which shifts only audio.
+export interface CaptionTimingConfig {
+  displayDelayMs: number;
+}
+
+export const DEFAULT_CAPTION_TIMING: CaptionTimingConfig = {
+  displayDelayMs: 0,
+};
+
+// Mirrors server/src/lib/surahExport.js's outro handling -- a fixed block
+// of extra time appended after the main content with a centered text card.
+export interface OutroConfig {
+  enabled: boolean;
+  durationMs: number;
+  line1: string;
+  line2: string;
+}
+
+export const DEFAULT_OUTRO: OutroConfig = {
+  enabled: false,
+  durationMs: 4000,
+  line1: 'JazakAllah Khair for watching',
+  line2: '',
+};
+
+// Mirrors server/src/lib/introTiming.js's computeIntroTimingWindow inputs.
+export interface IntroConfig {
+  introCardEnabled: boolean;
+  bismillahTextEnabled: boolean;
+  bismillahAudioEnabled: boolean;
+  introCardDurationMs: number;
+}
+
+export const DEFAULT_INTRO: IntroConfig = {
+  introCardEnabled: false,
+  bismillahTextEnabled: false,
+  bismillahAudioEnabled: false,
+  introCardDurationMs: 3000,
+};
+
+// Mirrors server/src/lib/surahExport.js's resolveBackground input shape.
+export interface BackgroundConfig {
+  clipIds: string[];
+  order: BackgroundOrder;
+  slotDurationSeconds: number;
+  transitionDurationSeconds: number;
+  transitionStyle: TransitionStyle;
+}
+
+export const DEFAULT_BACKGROUND: BackgroundConfig = {
+  clipIds: [],
+  order: 'sequential',
+  slotDurationSeconds: 8,
+  transitionDurationSeconds: 1,
+  transitionStyle: 'fade',
+};
+
+// Mirrors server/src/lib/backgroundVideoUpload.js's persistBackgroundVideoUpload
+// result -- an uploaded clip isn't in the curated BackgroundLibrary, so its
+// display title has to be tracked client-side once uploaded.
+export interface UploadedBackgroundClip {
+  id: string;
+  title: string;
+}
+
+// Mirrors server/src/lib/backgroundLibrary.js entries.
+export interface BackgroundClip {
+  id: string;
+  title: string;
+  url: string;
+  sourcePageUrl: string;
+  license: string;
+  attribution: string;
+}
+
+export type BackgroundLibrary = Record<string, BackgroundClip[]>;

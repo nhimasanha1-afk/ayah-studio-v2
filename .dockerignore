@@ -1,0 +1,27 @@
+**/node_modules
+
+# Generated/runtime caches -- all regenerated on demand by the server
+# (ensureAudioCached, ensureBackgroundClipCached, ensureStaticBackground,
+# ensurePlaceholderLogo) or are user-uploaded content, so none of this
+# belongs in the image. Mount a volume over server/output, server/assets,
+# and server/tmp in production instead -- see DEPLOYMENT.md.
+server/output
+server/tmp
+server/assets/audio
+server/assets/backgrounds/clips
+server/assets/backgrounds/uploads
+server/assets/backgrounds/static-placeholder-*.png
+server/assets/logos/uploads
+server/assets/logos/placeholder-logo-*.png
+
+client/dist
+client/.vite
+
+.git
+.gitignore
+*.log
+.DS_Store
+
+# Secrets are passed as real runtime environment variables (-e / docker
+# compose env), never baked into the image.
+.env
