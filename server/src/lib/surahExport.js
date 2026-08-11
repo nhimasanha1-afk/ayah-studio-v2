@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import ffmpegPathBin from 'ffmpeg-static';
+import { ffmpegPath as ffmpegPathBin } from './ffmpegBinaries.js';
 import { probe } from './ffmpeg.js';
 import { fetchChapter, fetchVerses, fetchReciterAudioFile } from './quranApi.js';
 import { ensureAudioCached } from './audioCache.js';

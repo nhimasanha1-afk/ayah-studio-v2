@@ -1,9 +1,8 @@
-import ffmpegPath from 'ffmpeg-static';
-import ffprobeStatic from 'ffprobe-static';
 import ffmpeg from 'fluent-ffmpeg';
+import { ffmpegPath, ffprobePath } from './ffmpegBinaries.js';
 
 ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobeStatic.path);
+ffmpeg.setFfprobePath(ffprobePath);
 
 export function probe(filePath) {
   return new Promise((resolve, reject) => {

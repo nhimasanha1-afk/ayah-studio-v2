@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import ffmpegPath from 'ffmpeg-static';
+import { ffmpegPath } from './ffmpegBinaries.js';
 
 /**
  * Generates (and caches, per resolution) a single static placeholder

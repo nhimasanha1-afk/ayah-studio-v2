@@ -14,9 +14,21 @@ RUN npm run build
 FROM node:20-bookworm-slim AS server
 WORKDIR /app/server
 
-# ffmpeg-static/ffprobe-static download real platform-specific binaries as
-# an npm postinstall step, so this must run inside the Linux image (not
-# copied from a host install) to get Linux binaries.
+# ffmpeg-static/ffprobe-static (installed below via npm) download one fixed
+# pre-built binary per platform from eugeneware/ffmpeg-static's GitHub
+# releases -- confirmed via a real production failure that its Linux build
+# is missing --enable-libharfbuzz, which the drawtext filter requires (used
+# for every badge/watermark/intro/outro text this app renders). apt's
+# ffmpeg is a full-featured build with drawtext support, and
+# server/src/lib/ffmpegBinaries.js prefers it over the incomplete static
+# binary whenever it's present at this path.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# ffmpeg-static/ffprobe-static's own postinstall download still needs to run
+# inside this Linux image (not copied from a host install) since the code
+# falls back to their downloaded binary wherever apt's ffmpeg isn't found
+# (e.g. local non-Docker dev).
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
 COPY server/ ./
