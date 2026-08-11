@@ -208,14 +208,17 @@ export interface UploadedBackgroundClip {
   title: string;
 }
 
-// Mirrors server/src/lib/backgroundLibrary.js entries.
+// Mirrors server/src/lib/backgroundLibrary.js entries. sourcePageUrl/license/
+// attribution are only present for clips whose source exposes that metadata
+// (e.g. Wikimedia) -- omitted rather than fabricated for sources that don't
+// (e.g. Mixkit has no public per-file license API).
 export interface BackgroundClip {
   id: string;
   title: string;
   url: string;
-  sourcePageUrl: string;
-  license: string;
-  attribution: string;
+  sourcePageUrl?: string;
+  license?: string;
+  attribution?: string;
 }
 
 export type BackgroundLibrary = Record<string, BackgroundClip[]>;

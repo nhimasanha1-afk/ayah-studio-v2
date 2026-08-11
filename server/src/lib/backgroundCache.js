@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findClipById } from './backgroundLibrary.js';
 
-const WIKIMEDIA_USER_AGENT = 'AyahStudio/0.1 (background-clip-fetch)';
+const CLIP_FETCH_USER_AGENT = 'AyahStudio/0.1 (background-clip-fetch)';
 
 function extensionFromUrl(url) {
   const match = /\.([a-z0-9]+)$/i.exec(new URL(url).pathname);
@@ -23,8 +23,8 @@ export async function ensureBackgroundClipCached(clipId, clipsDir) {
     return cachePath;
   }
 
-  // Wikimedia's Special:FilePath is a redirect, and its CDN requires a UA.
-  const res = await fetch(clip.url, { headers: { 'User-Agent': WIKIMEDIA_USER_AGENT }, redirect: 'follow' });
+  // Some sources (e.g. Wikimedia's Special:FilePath) redirect and require a UA.
+  const res = await fetch(clip.url, { headers: { 'User-Agent': CLIP_FETCH_USER_AGENT }, redirect: 'follow' });
   if (!res.ok) {
     throw new Error(`Failed to download background clip "${clipId}" (${res.status} ${res.statusText}): ${clip.url}`);
   }
