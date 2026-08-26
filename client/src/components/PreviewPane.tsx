@@ -89,6 +89,13 @@ export function PreviewPane() {
                 <div>{chapter.name_simple}</div>
                 <div className="opacity-80">{chapter.translated_name.name} • {chapter.id}</div>
               </div>
+            ) : style.badges.surahBadge.variant === 'arabic-transliteration' ? (
+              <div className="text-center drop-shadow">
+                <div style={{ fontFamily: FONT_REGISTRY.arabic[style.typography.arabicFont].family, fontSize: 16 }}>
+                  {chapter.name_arabic}
+                </div>
+                <div style={{ fontSize: 11 }}>{chapter.name_simple.toUpperCase()}</div>
+              </div>
             ) : (
               <span style={{ fontSize: 12 }} className="drop-shadow">
                 {chapter.name_simple} • {chapter.translated_name.name} • {chapter.id}
@@ -202,6 +209,12 @@ export function PreviewPane() {
                           {i < arabicWords.length - 1 ? ' ' : ''}
                         </span>
                       ))}
+                      {/* This preview always fetches verse 1 of the chapter, so the
+                          ayah number is always "١" -- see useFirstVerse. U+06DD is
+                          the real Unicode end-of-ayah mark; a real Arabic-script
+                          font renders it as a decorative circle around the digit,
+                          matching server/src/lib/assBuilder.js's export rendering. */}
+                      {style.colors.showAyahNumbers && ' ١۝'}
                     </p>
                     <p
                       dir={isRtlScript(translationScript) ? 'rtl' : undefined}
@@ -211,6 +224,7 @@ export function PreviewPane() {
                         color: style.colors.translationTextColor,
                       }}
                     >
+                      {style.colors.showAyahNumbers && '(1) '}
                       {verse.data.translationText}
                     </p>
                   </>

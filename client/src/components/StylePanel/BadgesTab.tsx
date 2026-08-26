@@ -47,6 +47,7 @@ export function BadgesTab() {
             >
               <option value="inline">Inline</option>
               <option value="stacked-title-card">Stacked title card</option>
+              <option value="arabic-transliteration">Arabic name + transliteration</option>
             </SelectField>
             <NumberField label="Font size" value={badges.surahBadge.fontSize} min={14} max={40} onChange={(v) => setBadge('surahBadge', { fontSize: v })} />
             <PositionSelect value={badges.surahBadge.position} onChange={(v) => setBadge('surahBadge', { position: v })} />

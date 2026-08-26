@@ -106,10 +106,11 @@ test('showAyahNumbers on: Arabic line gets the Arabic-Indic numeral appended aft
   const [arabicLine] = dialogueLines(ass, 'Arabic');
   const [translationLine] = dialogueLines(ass, 'Translation');
 
-  // Arabic: number comes after the word text, mirroring how the sentence
-  // naturally ends on screen-left for RTL text.
+  // Arabic: number (plus the real Quranic end-of-ayah decoration mark)
+  // comes after the word text, mirroring how the sentence naturally ends
+  // on screen-left for RTL text.
   const arabicText = arabicLine.split(',').slice(9).join(',');
-  assert.match(arabicText, /قُلْ.*٣$/);
+  assert.match(arabicText, /قُلْ.*٣۝$/);
 
   // Translation: number is a prefix at the very start of the line, per an
   // explicit user choice to keep both numbers on the left even though
@@ -125,5 +126,5 @@ test('the Arabic ayah number always renders in the normal (non-highlighted) colo
   const arabicText = arabicLine.split(',').slice(9).join(',');
   // The last override tag before the numeral must reset to the normal
   // arabic color, not leave the highlight color active.
-  assert.match(arabicText, /\{\\c&H00FFFFFF&\\shad\d+\} ٣$/);
+  assert.match(arabicText, /\{\\c&H00FFFFFF&\\shad\d+\} ٣۝$/);
 });

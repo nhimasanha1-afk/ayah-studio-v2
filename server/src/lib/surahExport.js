@@ -326,7 +326,11 @@ export async function runSurahExport({
     style,
     assPath,
     fontsDir: FONTS_DIR,
-    surahBadgeText: { line1: chapter.name_simple, line2: `${chapter.translated_name.name} • ${chapter.id}` },
+    surahBadgeText: {
+      line1: chapter.name_simple,
+      line2: `${chapter.translated_name.name} • ${chapter.id}`,
+      arabicName: chapter.name_arabic,
+    },
     logoInputLabel,
     introWindow,
     outroWindow,

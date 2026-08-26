@@ -111,7 +111,43 @@ export function buildFilterComplex({
     current = out;
   }
 
-  if (style.badges.surahBadge.enabled) {
+  if (style.badges.surahBadge.enabled && style.badges.surahBadge.variant === 'arabic-transliteration') {
+    // Two separate drawtext calls, not one two-line block: the Arabic name
+    // needs the Arabic font and the transliteration needs the Latin font,
+    // and a single drawtext call only has one fontfile. Both stacked lines
+    // reuse the same x expression as drawtextPositionExpr's single-line
+    // case, so each line independently centers/left/right-aligns on its
+    // own text_w exactly like normal -- only y differs between them.
+    // Vertical placement is computed from known font sizes rather than
+    // referencing the other line's runtime text_h (ffmpeg can't do that
+    // across separate filter instances), the same pragmatic approach the
+    // intro card above already uses for its own fixed vertical offset.
+    const { x, y: topY } = drawtextPositionExpr(style.badges.surahBadge.position, scaleFactor);
+    const arabicFontSize = scaled(style.badges.surahBadge.fontSize + 6);
+    const translitFontSize = scaled(style.badges.surahBadge.fontSize);
+    const lineGap = scaled(4);
+    const arabicLineHeight = Math.round(arabicFontSize * 1.3);
+    const translitLineHeight = Math.round(translitFontSize * 1.3);
+    const isBottom = style.badges.surahBadge.position.startsWith('bottom');
+
+    const arabicY = isBottom ? `h-${arabicLineHeight + lineGap + translitLineHeight}-${pad}` : `${topY}`;
+    const translitY = isBottom ? `h-${translitLineHeight}-${pad}` : `${topY}+${arabicLineHeight + lineGap}`;
+
+    const arabicText = escapeDrawtextValue(surahBadgeText.arabicName);
+    const translitText = escapeDrawtextValue(surahBadgeText.line1);
+
+    const arabicOut = nextLabel();
+    parts.push(
+      `[${current}]drawtext=fontfile='${arabicFontPath}':text='${arabicText}':fontsize=${arabicFontSize}:fontcolor=white:x=${x}:y=${arabicY}[${arabicOut}]`
+    );
+    current = arabicOut;
+
+    const translitOut = nextLabel();
+    parts.push(
+      `[${current}]drawtext=fontfile='${latinFontPath}':text='${translitText}':fontsize=${translitFontSize}:fontcolor=white:x=${x}:y=${translitY}[${translitOut}]`
+    );
+    current = translitOut;
+  } else if (style.badges.surahBadge.enabled) {
     const { x, y } = drawtextPositionExpr(style.badges.surahBadge.position, scaleFactor);
     const isStacked = style.badges.surahBadge.variant === 'stacked-title-card';
     const text = escapeDrawtextValue(

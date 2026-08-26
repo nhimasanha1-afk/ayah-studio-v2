@@ -12,7 +12,7 @@ export type BadgePosition =
   | 'bottom-right';
 export type TextPosition = 'upper-third' | 'center' | 'lower-third';
 export type LogoShape = 'square' | 'circle' | 'rounded';
-export type SurahBadgeVariant = 'inline' | 'stacked-title-card';
+export type SurahBadgeVariant = 'inline' | 'stacked-title-card' | 'arabic-transliteration';
 export type Resolution = '720p' | '1080p';
 export type AspectRatio = '16:9' | '9:16';
 export type TextRevealAnimation = 'none' | 'fade';

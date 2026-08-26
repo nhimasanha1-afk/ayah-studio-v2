@@ -120,8 +120,16 @@ export function buildAssSubtitles(
     // the user explicitly wants both numbers on the left regardless, so
     // here the English number is a prefix at the start of the line instead
     // of a suffix at its (right-side) end.
+    //
+    // U+06DD ARABIC END OF AYAH is the real Unicode-standard way to encode
+    // a Quranic verse-number marker: placed right after Arabic-Indic
+    // digits, a real Arabic-script-aware font renders the pair as a small
+    // decorative circular ornament around the number (confirmed with a
+    // real rendered frame in both bundled Arabic fonts), not just a plain
+    // digit -- this is what makes it look like an authentic ayah marker
+    // rather than an arbitrary number.
     const arabicNumberSuffix = style.colors.showAyahNumbers
-      ? `{\\c${arabicColor}&\\shad${shadowDepth}} ${toArabicIndicNumerals(verse.verseNumber)}`
+      ? `{\\c${arabicColor}&\\shad${shadowDepth}} ${toArabicIndicNumerals(verse.verseNumber)}۝`
       : '';
     const translationNumberPrefix = style.colors.showAyahNumbers ? `(${verse.verseNumber}) ` : '';
 
