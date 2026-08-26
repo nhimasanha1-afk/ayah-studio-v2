@@ -26,7 +26,7 @@ function App() {
           <BackgroundPanel />
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 self-start sticky top-6">
           <PreviewPane />
           <ExportBar />
         </div>
