@@ -5,18 +5,17 @@ services:
       - "4000:4000"
     environment:
       - PORT=4000
+      # Moves output/ and assets/ (downloaded caches, uploads, generated
+      # placeholders -- everything except the image-bundled fonts) onto the
+      # mounted volume below, so they survive restarts and rebuilds. Unset
+      # this (or the volume) and the app still works, just without
+      # persistence -- see server/src/lib/paths.js.
+      - DATA_DIR=/data
       # Optional -- only needed for AI-generated background video. Set it in
       # a real .env file (or your shell) rather than hardcoding it here.
       - RUNWAYML_API_SECRET=${RUNWAYML_API_SECRET:-}
     volumes:
-      - ayah-output:/app/server/output
-      - ayah-assets:/app/server/assets
-      # No volume for server/tmp -- it's just scratch (subtitle .ass files,
-      # in-flight uploads before they're moved into assets/), fine to lose
-      # on restart. server/src/lib/moveFile.js handles the resulting
-      # cross-volume rename (tmp's container layer -> the assets volume)
-      # via a copy+delete fallback when a plain rename hits EXDEV.
+      - ayah-data:/data
 
 volumes:
-  ayah-output:
-  ayah-assets:
+  ayah-data:

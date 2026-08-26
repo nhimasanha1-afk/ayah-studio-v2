@@ -1,10 +1,9 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { runSurahExport } from '../lib/surahExport.js';
+import { OUTPUT_DIR } from '../lib/paths.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const outputDir = path.join(__dirname, '..', '..', 'output');
+const outputDir = OUTPUT_DIR;
 fs.mkdirSync(outputDir, { recursive: true });
 
 const chapterId = Number(process.argv[2] ?? 112); // Al-Ikhlas by default: short, good smoke test

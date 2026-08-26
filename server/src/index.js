@@ -6,12 +6,13 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import exportRouter from './routes/export.js';
 import uploadsRouter from './routes/uploads.js';
+import { OUTPUT_DIR, LOGO_UPLOADS_DIR, BACKGROUND_UPLOADS_DIR, TMP_DIR } from './lib/paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const outputDir = path.join(__dirname, '..', 'output');
-const logoUploadsDir = path.join(__dirname, '..', 'assets', 'logos', 'uploads');
-const backgroundUploadsDir = path.join(__dirname, '..', 'assets', 'backgrounds', 'uploads');
-const tmpDir = path.join(__dirname, '..', 'tmp');
+const outputDir = OUTPUT_DIR;
+const logoUploadsDir = LOGO_UPLOADS_DIR;
+const backgroundUploadsDir = BACKGROUND_UPLOADS_DIR;
+const tmpDir = TMP_DIR;
 fs.mkdirSync(outputDir, { recursive: true });
 fs.mkdirSync(logoUploadsDir, { recursive: true });
 fs.mkdirSync(backgroundUploadsDir, { recursive: true });

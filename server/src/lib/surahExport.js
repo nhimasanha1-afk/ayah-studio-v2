@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { ffmpegPath as ffmpegPathBin } from './ffmpegBinaries.js';
 import { probe } from './ffmpeg.js';
 import { fetchChapter, fetchVerses, fetchReciterAudioFile } from './quranApi.js';
@@ -21,18 +20,16 @@ import { buildFilterComplex, buildAudioFilterComplex } from './videoComposition.
 import { resolveStyle } from './styleConfig.js';
 import { computeIntroTimingWindow } from './introTiming.js';
 import { getCanvasDimensions, getScaleFactor } from './layout.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SERVER_DIR = path.join(__dirname, '..', '..');
-const ASSETS_DIR = path.join(SERVER_DIR, 'assets');
-const FONTS_DIR = path.join(ASSETS_DIR, 'fonts');
-const AUDIO_DIR = path.join(ASSETS_DIR, 'audio');
-const BACKGROUNDS_DIR = path.join(ASSETS_DIR, 'backgrounds');
-const BACKGROUND_CLIPS_DIR = path.join(ASSETS_DIR, 'backgrounds', 'clips');
-const LOGOS_DIR = path.join(ASSETS_DIR, 'logos');
-const LOGO_UPLOADS_DIR = path.join(ASSETS_DIR, 'logos', 'uploads');
-const BACKGROUND_UPLOADS_DIR = path.join(ASSETS_DIR, 'backgrounds', 'uploads');
-const TMP_DIR = path.join(SERVER_DIR, 'tmp');
+import {
+  FONTS_DIR,
+  AUDIO_DIR,
+  BACKGROUNDS_DIR,
+  BACKGROUND_CLIPS_DIR,
+  LOGOS_DIR,
+  LOGO_UPLOADS_DIR,
+  BACKGROUND_UPLOADS_DIR,
+  TMP_DIR,
+} from './paths.js';
 
 export const DEFAULT_TRANSLATION_ID = 20; // Saheeh International
 export const DEFAULT_RECITER_ID = 7; // Mishari Rashid al-`Afasy
