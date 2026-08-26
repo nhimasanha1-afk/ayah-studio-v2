@@ -42,10 +42,16 @@ ENV NODE_ENV=production
 ENV PORT=4000
 EXPOSE 4000
 
-# Exported videos, downloaded audio/background caches, and uploaded
-# logos/background clips all live under these paths -- mount volumes here in
-# production so a redeploy doesn't wipe user-facing output or force
-# re-downloading/re-generating cached assets. See DEPLOYMENT.md.
-VOLUME ["/app/server/output", "/app/server/assets", "/app/server/tmp"]
-
+# Deliberately no VOLUME declaration here. Declaring one per path (an
+# earlier version of this Dockerfile did, for output/assets/tmp) makes
+# Docker create a separate anonymous volume for each path even when no real
+# disk is attached -- confirmed via a real production failure: code that
+# fs.renameSync'd a file from tmp/ into assets/ threw EXDEV (cross-device
+# link) because the two paths landed on different filesystems inside the
+# container. server/src/lib/moveFile.js now falls back to copy+delete on
+# EXDEV regardless, but there's no reason to keep splitting the filesystem
+# for a benefit (persistence) that only exists once a real disk is actually
+# mounted -- and Render mounts exactly one disk at one path (see
+# DEPLOYMENT.md), so a multi-path VOLUME declaration was never going to
+# match that anyway.
 CMD ["node", "src/index.js"]

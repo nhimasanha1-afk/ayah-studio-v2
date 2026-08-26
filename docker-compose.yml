@@ -11,9 +11,12 @@ services:
     volumes:
       - ayah-output:/app/server/output
       - ayah-assets:/app/server/assets
-      - ayah-tmp:/app/server/tmp
+      # No volume for server/tmp -- it's just scratch (subtitle .ass files,
+      # in-flight uploads before they're moved into assets/), fine to lose
+      # on restart. server/src/lib/moveFile.js handles the resulting
+      # cross-volume rename (tmp's container layer -> the assets volume)
+      # via a copy+delete fallback when a plain rename hits EXDEV.
 
 volumes:
   ayah-output:
   ayah-assets:
-  ayah-tmp:

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { probe } from './ffmpeg.js';
+import { moveFile } from './moveFile.js';
 
 const MAX_DIMENSION = 4000;
 
@@ -59,7 +60,7 @@ export async function persistLogoUpload(buffer, uploadsDir, tmpDir) {
 
     const logoId = `${randomUUID()}.${extension}`;
     const finalPath = path.join(uploadsDir, logoId);
-    fs.renameSync(tmpPath, finalPath);
+    moveFile(tmpPath, finalPath);
 
     return { logoId, width: stream.width, height: stream.height };
   } finally {

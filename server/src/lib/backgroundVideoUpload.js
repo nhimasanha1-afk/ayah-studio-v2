@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { probe } from './ffmpeg.js';
+import { moveFile } from './moveFile.js';
 
 const MAX_DIMENSION = 4000;
 const MAX_DURATION_SECONDS = 10 * 60; // background clips are looped/trimmed anyway; this just bounds abuse
@@ -66,7 +67,7 @@ export async function persistBackgroundVideoUpload(buffer, uploadsDir, tmpDir) {
 
     const clipId = `${randomUUID()}.${extension}`;
     const finalPath = path.join(uploadsDir, clipId);
-    fs.renameSync(tmpPath, finalPath);
+    moveFile(tmpPath, finalPath);
 
     return { clipId, width: stream.width, height: stream.height, durationSeconds };
   } finally {

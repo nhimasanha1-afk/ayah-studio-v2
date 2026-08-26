@@ -31,27 +31,45 @@ Multi-stage `Dockerfile` at the repo root:
 
 ## Persistent data
 
-Three directories under `server/` hold state that should survive restarts
-and redeploys:
+Two directories under `server/` hold state worth surviving restarts and
+redeploys:
 
 | Path | What's in it |
 |---|---|
 | `server/output/` | Rendered `.mp4`/`.srt` export files |
 | `server/assets/` | Checked-in fonts (`assets/fonts/`, baked into the image) plus lazily-generated caches: downloaded reciter/Bismillah audio, downloaded background clips, generated placeholder backgrounds/logo, and user-uploaded logos/background videos |
-| `server/tmp/` | Scratch files (subtitle `.ass` files, in-flight uploads) |
 
-The `Dockerfile` declares these as `VOLUME`s. `docker-compose.yml` mounts
-named volumes over them. Named volumes are safe to mount directly over
-`server/assets` even though it has checked-in content (the fonts) — Docker
-copies the image's existing directory contents into a named volume the
-first time it's used, so the fonts survive; this only works for named
-volumes, not bind mounts to an empty host directory.
+`server/tmp/` (scratch subtitle `.ass` files, in-flight uploads before
+they're moved into `assets/`) deliberately has no volume — it's fine to
+lose on restart, and giving it one caused a real bug (see below).
+
+`docker-compose.yml` mounts named volumes over `output` and `assets`.
+Named volumes are safe to mount directly over `server/assets` even though
+it has checked-in content (the fonts) — Docker copies the image's existing
+directory contents into a named volume the first time it's used, so the
+fonts survive; this only works for named volumes, not bind mounts to an
+empty host directory.
 
 Losing `server/assets`'s cache subdirectories isn't destructive — everything
 in them regenerates on demand (`ensureAudioCached`, `ensureBackgroundClipCached`,
 `ensureStaticBackground`, `ensurePlaceholderLogo`) — but without a volume,
 every redeploy re-downloads/re-renders them and any user-uploaded logos or
 background videos are permanently lost.
+
+**A real bug this caused, and how it's handled now:** an earlier version of
+the `Dockerfile` declared `VOLUME`s for `output`, `assets`, *and* `tmp`.
+Declaring a `VOLUME` per path makes Docker create a separate anonymous
+volume for each one even when no real disk is attached — which meant `tmp`
+and `assets` silently lived on different filesystems inside the container.
+Code that uploads a file writes it to `tmp/` first, then
+`fs.renameSync`s it into `assets/uploads/` once validated; `rename()`
+can't cross filesystems, so every upload (including AI-generated
+backgrounds, which reuse the same persistence path) failed with `EXDEV:
+cross-device link not permitted` in production, the "no disk attached" free
+tier included. Fixed two ways: the `Dockerfile` no longer declares `tmp` as
+its own volume, and `server/src/lib/moveFile.js` falls back to copy+delete
+whenever a plain rename hits `EXDEV`, so this is safe regardless of how
+volumes end up laid out in any future deployment.
 
 ## Build and run locally
 
@@ -70,7 +88,6 @@ docker build -t ayah-studio .
 docker run -p 4000:4000 \
   -v ayah-output:/app/server/output \
   -v ayah-assets:/app/server/assets \
-  -v ayah-tmp:/app/server/tmp \
   ayah-studio
 ```
 
