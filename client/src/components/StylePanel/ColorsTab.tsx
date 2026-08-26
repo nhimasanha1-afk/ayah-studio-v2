@@ -52,6 +52,12 @@ export function ColorsTab() {
         ))}
       </SelectField>
 
+      <CheckboxField
+        label="Show ayah numbers"
+        checked={colors.showAyahNumbers}
+        onChange={(v) => setColors({ showAyahNumbers: v })}
+      />
+
       <div className="border-t border-neutral-800 pt-3 space-y-3">
         <CheckboxField label="Scrim (darkened caption background)" checked={colors.scrim.enabled} onChange={(v) => setScrim({ enabled: v })} />
         {colors.scrim.enabled && (

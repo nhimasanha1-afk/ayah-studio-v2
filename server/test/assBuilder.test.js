@@ -10,6 +10,7 @@ const captionData = {
     {
       startMs: 0,
       endMs: 1000,
+      verseNumber: 3,
       translationText: 'Say, He is God, the One',
       words: [{ text: 'قُلْ', startMs: 0, endMs: 1000 }],
     },
@@ -18,6 +19,10 @@ const captionData = {
 
 function styleLine(assText) {
   return assText.split('\n').find((l) => l.startsWith('Style: Translation,'));
+}
+
+function dialogueLines(assText, styleName) {
+  return assText.split('\n').filter((l) => l.startsWith('Dialogue:') && l.includes(`,${styleName},`));
 }
 
 test('with no translationLanguage, the Translation style uses the user\'s chosen latin font (unchanged default behavior)', () => {
@@ -84,4 +89,41 @@ test('an unrecognized translationLanguage falls back to the latin font bucket ra
   const style = resolveStyle({ typography: { latinFont: 'inter' } });
   const ass = buildAssSubtitles(captionData, style, layout, 'klingon');
   assert.match(styleLine(ass), /^Style: Translation,Inter,/);
+});
+
+test('showAyahNumbers off (default): no verse number appears on either line', () => {
+  const style = resolveStyle();
+  const ass = buildAssSubtitles(captionData, style, layout);
+  const [arabicLine] = dialogueLines(ass, 'Arabic');
+  const [translationLine] = dialogueLines(ass, 'Translation');
+  assert.ok(!arabicLine.includes('٣'));
+  assert.ok(!translationLine.includes('(3)'));
+});
+
+test('showAyahNumbers on: Arabic line gets the Arabic-Indic numeral appended after the word, Translation line gets "(N) " prefixed', () => {
+  const style = resolveStyle({ colors: { showAyahNumbers: true } });
+  const ass = buildAssSubtitles(captionData, style, layout);
+  const [arabicLine] = dialogueLines(ass, 'Arabic');
+  const [translationLine] = dialogueLines(ass, 'Translation');
+
+  // Arabic: number comes after the word text, mirroring how the sentence
+  // naturally ends on screen-left for RTL text.
+  const arabicText = arabicLine.split(',').slice(9).join(',');
+  assert.match(arabicText, /قُلْ.*٣$/);
+
+  // Translation: number is a prefix at the very start of the line, per an
+  // explicit user choice to keep both numbers on the left even though
+  // English's natural sentence-end is on the right.
+  const translationText = translationLine.split(',').slice(9).join(',');
+  assert.match(translationText, /^\(3\) Say, He is God, the One$/);
+});
+
+test('the Arabic ayah number always renders in the normal (non-highlighted) color, even on the single-word verse where that word is the active/highlighted one', () => {
+  const style = resolveStyle({ colors: { showAyahNumbers: true, highlightColor: '#FFD700', arabicTextColor: '#FFFFFF' } });
+  const ass = buildAssSubtitles(captionData, style, layout);
+  const [arabicLine] = dialogueLines(ass, 'Arabic');
+  const arabicText = arabicLine.split(',').slice(9).join(',');
+  // The last override tag before the numeral must reset to the normal
+  // arabic color, not leave the highlight color active.
+  assert.match(arabicText, /\{\\c&H00FFFFFF&\\shad\d+\} ٣$/);
 });

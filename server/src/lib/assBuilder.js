@@ -2,6 +2,7 @@ import { hexToAssColor } from './colorUtils.js';
 import { captionVerticalLayout } from './layout.js';
 import { FONT_REGISTRY, TRANSLATION_SCRIPT_FONTS } from './styleConfig.js';
 import { scriptForLanguage } from './translationFonts.js';
+import { toArabicIndicNumerals } from './arabicNumerals.js';
 
 /**
  * Resolves the font family for the Translation caption line based on the
@@ -112,6 +113,18 @@ export function buildAssSubtitles(
 
     const words = verse.words.map((w) => escapeAssText(w.text));
 
+    // Ayah numbers mirror each line's own reading direction: Arabic is
+    // RTL, so its sentence-end (where the number belongs) already lands on
+    // screen-left, and the number is appended inline after the last word.
+    // English is LTR, so its sentence-end is naturally on screen-right --
+    // the user explicitly wants both numbers on the left regardless, so
+    // here the English number is a prefix at the start of the line instead
+    // of a suffix at its (right-side) end.
+    const arabicNumberSuffix = style.colors.showAyahNumbers
+      ? `{\\c${arabicColor}&\\shad${shadowDepth}} ${toArabicIndicNumerals(verse.verseNumber)}`
+      : '';
+    const translationNumberPrefix = style.colors.showAyahNumbers ? `(${verse.verseNumber}) ` : '';
+
     for (let i = 0; i < verse.words.length; i++) {
       const word = verse.words[i];
       if (word.startMs == null || word.endMs == null) continue;
@@ -124,11 +137,16 @@ export function buildAssSubtitles(
         )
         .join(' ');
 
-      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, fadeTag + rendered));
+      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, fadeTag + rendered + arabicNumberSuffix));
     }
 
     lines.push(
-      dialogueLine('Translation', verse.startMs, verse.endMs, fadeTag + escapeAssText(verse.translationText))
+      dialogueLine(
+        'Translation',
+        verse.startMs,
+        verse.endMs,
+        fadeTag + escapeAssText(translationNumberPrefix + verse.translationText)
+      )
     );
   }
 

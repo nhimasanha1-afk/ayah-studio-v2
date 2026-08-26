@@ -65,6 +65,7 @@ export interface StyleConfig {
     videoFilter: VideoFilter;
     backgroundBlur: number;
     backgroundZoomPan: ZoomPanStyle;
+    showAyahNumbers: boolean;
   };
   badges: {
     watermark: { enabled: boolean; text: string; opacity: number; color: string; position: BadgePosition; fontSize: number };
@@ -94,11 +95,12 @@ export const DEFAULT_STYLE: StyleConfig = {
     videoFilter: 'none',
     backgroundBlur: 0,
     backgroundZoomPan: 'none',
+    showAyahNumbers: false,
   },
   badges: {
-    watermark: { enabled: false, text: '', opacity: 0.6, color: '#FFFFFF', position: 'bottom-right', fontSize: 22 },
-    surahBadge: { enabled: true, position: 'top-center', fontSize: 22, variant: 'inline' },
-    channelLogo: { enabled: false, position: 'top-left', size: 90, shape: 'circle', logoId: null },
+    watermark: { enabled: false, text: '', opacity: 0.6, color: '#FFFFFF', position: 'bottom-center', fontSize: 22 },
+    surahBadge: { enabled: true, position: 'top-left', fontSize: 22, variant: 'inline' },
+    channelLogo: { enabled: false, position: 'top-right', size: 90, shape: 'circle', logoId: null },
     channelNameBadge: { enabled: false, text: '', position: 'bottom-left', fontSize: 20 },
   },
 };
