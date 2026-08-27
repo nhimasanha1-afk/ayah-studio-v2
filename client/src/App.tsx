@@ -26,8 +26,19 @@ function App() {
           <BackgroundPanel />
         </div>
 
-        <div className="space-y-4 self-start sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
-          <PreviewPane />
+        {/* Only the preview (fixed aspect ratio, bounded height) is sticky --
+            it stays pinned while scrolling the options on the left. ExportBar
+            is a normal sibling below it, in ordinary page flow: its content
+            grows once an export finishes (video player, download links), and
+            a plain page scroll reveals that growth naturally. An earlier
+            version wrapped both in one sticky+max-height+overflow-auto box,
+            which technically kept the video reachable but only via scrolling
+            inside that specific small nested panel -- not obvious, and easy
+            to mistake for the video simply not showing up. */}
+        <div className="space-y-4 self-start">
+          <div className="sticky top-6">
+            <PreviewPane />
+          </div>
           <ExportBar />
         </div>
       </main>
