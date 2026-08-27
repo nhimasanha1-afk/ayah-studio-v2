@@ -16,6 +16,7 @@ import {
   type Resolution,
   type StyleConfig,
   type UploadedBackgroundClip,
+  type UploadedCardImage,
 } from '../lib/types';
 
 interface ExportConfigState {
@@ -32,6 +33,7 @@ interface ExportConfigState {
   resolution: Resolution;
   aspectRatio: AspectRatio;
   uploadedBackgroundClips: UploadedBackgroundClip[];
+  uploadedCardImages: UploadedCardImage[];
 
   setChapterId: (id: number) => void;
   setReciterId: (id: number) => void;
@@ -54,6 +56,7 @@ interface ExportConfigState {
   toggleClipInPool: (clipId: string) => void;
   moveClipInPool: (clipId: string, direction: 'up' | 'down') => void;
   addUploadedBackgroundClip: (clip: UploadedBackgroundClip) => void;
+  addUploadedCardImage: (image: UploadedCardImage) => void;
 
   setAudioSync: (partial: Partial<AudioSyncConfig>) => void;
   setCaptionTiming: (partial: Partial<CaptionTimingConfig>) => void;
@@ -73,6 +76,7 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
   resolution: '720p',
   aspectRatio: '16:9',
   uploadedBackgroundClips: [],
+  uploadedCardImages: [],
 
   setChapterId: (chapterId) => set({ chapterId }),
   setReciterId: (reciterId) => set({ reciterId }),
@@ -123,6 +127,9 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
 
   addUploadedBackgroundClip: (clip) =>
     set((s) => ({ uploadedBackgroundClips: [...s.uploadedBackgroundClips, clip] })),
+
+  addUploadedCardImage: (image) =>
+    set((s) => ({ uploadedCardImages: [...s.uploadedCardImages, image] })),
 
   setAudioSync: (partial) => set((s) => ({ audioSync: { ...s.audioSync, ...partial } })),
   setCaptionTiming: (partial) => set((s) => ({ captionTiming: { ...s.captionTiming, ...partial } })),

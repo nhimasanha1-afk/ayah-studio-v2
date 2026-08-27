@@ -163,6 +163,13 @@ export interface OutroConfig {
   durationMs: number;
   line1: string;
   line2: string;
+  // Optional override shown behind the card instead of the main background,
+  // for this window only. Shares the exact same id space as
+  // BackgroundConfig.clipIds (curated library id, or an uploaded video's
+  // clipId) plus uploaded card image ids (see backendApi.ts's
+  // uploadCardImage) -- null means "use the main background" (unchanged
+  // behavior).
+  cardBackgroundClipId: string | null;
 }
 
 export const DEFAULT_OUTRO: OutroConfig = {
@@ -170,6 +177,7 @@ export const DEFAULT_OUTRO: OutroConfig = {
   durationMs: 4000,
   line1: 'JazakAllah Khair for watching',
   line2: '',
+  cardBackgroundClipId: null,
 };
 
 // Mirrors server/src/lib/introTiming.js's computeIntroTimingWindow inputs.
@@ -178,6 +186,8 @@ export interface IntroConfig {
   bismillahTextEnabled: boolean;
   bismillahAudioEnabled: boolean;
   introCardDurationMs: number;
+  // Same override as OutroConfig.cardBackgroundClipId, but for the intro window.
+  cardBackgroundClipId: string | null;
 }
 
 export const DEFAULT_INTRO: IntroConfig = {
@@ -185,6 +195,7 @@ export const DEFAULT_INTRO: IntroConfig = {
   bismillahTextEnabled: false,
   bismillahAudioEnabled: false,
   introCardDurationMs: 3000,
+  cardBackgroundClipId: null,
 };
 
 // Mirrors server/src/lib/surahExport.js's resolveBackground input shape.
@@ -208,6 +219,14 @@ export const DEFAULT_BACKGROUND: BackgroundConfig = {
 // result -- an uploaded clip isn't in the curated BackgroundLibrary, so its
 // display title has to be tracked client-side once uploaded.
 export interface UploadedBackgroundClip {
+  id: string;
+  title: string;
+}
+
+// Mirrors server/src/lib/cardImageUpload.js's persistCardImageUpload result
+// -- an uploaded intro/outro card background image, tracked client-side
+// once uploaded the same way an uploaded background video is.
+export interface UploadedCardImage {
   id: string;
   title: string;
 }

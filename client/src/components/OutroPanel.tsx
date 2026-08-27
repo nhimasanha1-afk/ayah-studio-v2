@@ -1,4 +1,5 @@
 import { useExportConfigStore } from '../state/exportConfigStore';
+import { CardBackgroundPicker } from './fields/CardBackgroundPicker';
 import { CheckboxField } from './fields/CheckboxField';
 import { NumberField } from './fields/NumberField';
 import { TextField } from './fields/TextField';
@@ -24,6 +25,10 @@ export function OutroPanel() {
           />
           <TextField label="Line 1" value={outro.line1} onChange={(v) => setOutro({ line1: v })} />
           <TextField label="Line 2 (optional)" value={outro.line2} onChange={(v) => setOutro({ line2: v })} />
+          <CardBackgroundPicker
+            value={outro.cardBackgroundClipId}
+            onChange={(clipId) => setOutro({ cardBackgroundClipId: clipId })}
+          />
         </>
       )}
 

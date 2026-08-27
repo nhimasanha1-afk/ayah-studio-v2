@@ -11,6 +11,25 @@ function fontFilePath(fontsDir, bucket, key) {
 }
 
 /**
+ * Scales a secondary input (an intro/outro card's own background image or
+ * video, resolved separately by surahExport.js) to fully cover the canvas
+ * -- "cover" fit via increase+crop, same approach as the channel logo --
+ * then overlays it on top of `current`, gated to the given time window so
+ * it's only visible while that window is active. Drawn early in its
+ * window's own block (before the window's text), so the text still ends up
+ * on top of it.
+ */
+function overlayCardBackground(current, mediaInputLabel, canvasWidth, canvasHeight, enableExpr, nextLabel, parts) {
+  const scaledLabel = nextLabel();
+  parts.push(
+    `[${mediaInputLabel}]scale=${canvasWidth}:${canvasHeight}:force_original_aspect_ratio=increase,crop=${canvasWidth}:${canvasHeight}[${scaledLabel}]`
+  );
+  const out = nextLabel();
+  parts.push(`[${current}][${scaledLabel}]overlay=x=0:y=0:enable='${enableExpr}'[${out}]`);
+  return out;
+}
+
+/**
  * Builds the full -filter_complex graph: scrim -> word-synced subtitles ->
  * intro-window overlay (Bismillah text / intro card, time-gated to
  * [0, windowMs)) -> watermark -> surah badge -> channel name badge ->
@@ -29,6 +48,8 @@ export function buildFilterComplex({
   logoInputLabel,
   introWindow,
   outroWindow,
+  introBackgroundInputLabel,
+  outroBackgroundInputLabel,
   backgroundInputLabel = '0:v',
   canvasWidth,
   canvasHeight,
@@ -78,6 +99,10 @@ export function buildFilterComplex({
     const windowSec = (introWindow.windowMs / 1000).toFixed(3);
     const enable = `lt(t\\,${windowSec})`;
     const y = introTextY(style.colors.textPosition, canvasHeight);
+
+    if (introBackgroundInputLabel) {
+      current = overlayCardBackground(current, introBackgroundInputLabel, canvasWidth, canvasHeight, enable, nextLabel, parts);
+    }
 
     if (introWindow.showBismillahText) {
       const arabicColor = hexToFfmpegColor(style.colors.arabicTextColor);
@@ -203,6 +228,11 @@ export function buildFilterComplex({
   // after the main content by runSurahExport's totalDurationSeconds calc.
   if (outroWindow && outroWindow.enabled && outroWindow.durationSec > 0) {
     const enable = `gte(t\\,${outroWindow.startSec.toFixed(3)})`;
+
+    if (outroBackgroundInputLabel) {
+      current = overlayCardBackground(current, outroBackgroundInputLabel, canvasWidth, canvasHeight, enable, nextLabel, parts);
+    }
+
     const scrimColor = hexToFfmpegColor('#000000', 0.55);
     const scrimOut = nextLabel();
     parts.push(

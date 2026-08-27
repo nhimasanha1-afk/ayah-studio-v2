@@ -23,6 +23,7 @@ export const BACKGROUND_CLIPS_DIR = path.join(BACKGROUNDS_DIR, 'clips');
 export const BACKGROUND_UPLOADS_DIR = path.join(BACKGROUNDS_DIR, 'uploads');
 export const LOGOS_DIR = path.join(DATA_ASSETS_DIR, 'logos');
 export const LOGO_UPLOADS_DIR = path.join(LOGOS_DIR, 'uploads');
+export const CARD_IMAGE_UPLOADS_DIR = path.join(DATA_ASSETS_DIR, 'card-images');
 
 // Fonts are checked-in, image-bundled assets -- never regenerable, so they
 // always live with the code (SERVER_DIR), regardless of DATA_DIR.

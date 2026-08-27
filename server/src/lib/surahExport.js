@@ -14,6 +14,7 @@ import { ensurePlaceholderLogo } from './channelLogo.js';
 import { resolveUploadedLogoPath } from './logoUpload.js';
 import { ensureBackgroundClipCached } from './backgroundCache.js';
 import { isUploadedBackgroundClipId, resolveUploadedBackgroundVideoPath } from './backgroundVideoUpload.js';
+import { isUploadedCardImageId, resolveUploadedCardImagePath } from './cardImageUpload.js';
 import { resolvePlaybackOrder, planBackgroundSequence } from './backgroundSequence.js';
 import { buildBackgroundFilterGraph } from './backgroundFilterGraph.js';
 import { buildFilterComplex, buildAudioFilterComplex } from './videoComposition.js';
@@ -28,6 +29,7 @@ import {
   LOGOS_DIR,
   LOGO_UPLOADS_DIR,
   BACKGROUND_UPLOADS_DIR,
+  CARD_IMAGE_UPLOADS_DIR,
   TMP_DIR,
 } from './paths.js';
 
@@ -163,6 +165,30 @@ async function resolveBackground({ background, totalDurationSeconds, canvasWidth
   }));
 
   return { inputs, backgroundInputLabel: outputLabel, backgroundFilterParts: filterParts, instances };
+}
+
+/**
+ * Resolves a single optional intro/outro card background override -- a
+ * curated library clip, an uploaded background video, or an uploaded card
+ * image, all sharing one id space (see cardImageUpload.js's "img-" prefix
+ * for how an uploaded image is told apart from the other two). Returns the
+ * ffmpeg input to append, or null when no override is set. A still image is
+ * looped indefinitely (like the static placeholder background); a video is
+ * stream-looped to exactly cover the window it'll be shown in, the same
+ * pattern resolveBackground uses for the main rotation.
+ */
+async function resolveCardBackgroundInput(clipId, windowDurationSeconds) {
+  if (!clipId) return null;
+
+  if (isUploadedCardImageId(clipId)) {
+    const imagePath = resolveUploadedCardImagePath(clipId, CARD_IMAGE_UPLOADS_DIR);
+    return { path: imagePath, loop: true };
+  }
+
+  const clipPath = isUploadedBackgroundClipId(clipId)
+    ? resolveUploadedBackgroundVideoPath(clipId, BACKGROUND_UPLOADS_DIR)
+    : await ensureBackgroundClipCached(clipId, BACKGROUND_CLIPS_DIR);
+  return { path: clipPath, streamLoop: true, duration: windowDurationSeconds };
 }
 
 /**
@@ -314,6 +340,32 @@ export async function runSurahExport({
     inputs.push({ path: logoPath });
   }
 
+  // Optional per-card background override: falls back to the main
+  // background (i.e. no extra input, no overlay stage) if unset or if the
+  // referenced clip/image can no longer be resolved (e.g. a stale id from a
+  // since-deleted upload).
+  let introBackgroundInputLabel = null;
+  if (introOverrides.cardBackgroundClipId && introWindowTiming.windowMs > 0) {
+    try {
+      const input = await resolveCardBackgroundInput(introOverrides.cardBackgroundClipId, introWindowTiming.windowMs / 1000);
+      introBackgroundInputLabel = `${inputs.length}:v`;
+      inputs.push(input);
+    } catch (err) {
+      console.warn(`[surahExport] intro card background "${introOverrides.cardBackgroundClipId}" unavailable (${err.message}), using main background instead`);
+    }
+  }
+
+  let outroBackgroundInputLabel = null;
+  if (outroOverrides.cardBackgroundClipId && outroDurationSeconds > 0) {
+    try {
+      const input = await resolveCardBackgroundInput(outroOverrides.cardBackgroundClipId, outroDurationSeconds);
+      outroBackgroundInputLabel = `${inputs.length}:v`;
+      inputs.push(input);
+    } catch (err) {
+      console.warn(`[surahExport] outro card background "${outroOverrides.cardBackgroundClipId}" unavailable (${err.message}), using main background instead`);
+    }
+  }
+
   const introWindow = {
     windowMs: introWindowTiming.windowMs,
     showBismillahText: bismillahTextEnabled,
@@ -334,6 +386,8 @@ export async function runSurahExport({
     logoInputLabel,
     introWindow,
     outroWindow,
+    introBackgroundInputLabel,
+    outroBackgroundInputLabel,
     backgroundInputLabel,
     canvasWidth,
     canvasHeight,

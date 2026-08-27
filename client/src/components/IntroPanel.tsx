@@ -1,4 +1,5 @@
 import { useExportConfigStore } from '../state/exportConfigStore';
+import { CardBackgroundPicker } from './fields/CardBackgroundPicker';
 import { CheckboxField } from './fields/CheckboxField';
 import { NumberField } from './fields/NumberField';
 import { Panel } from './Panel';
@@ -6,6 +7,7 @@ import { Panel } from './Panel';
 export function IntroPanel() {
   const intro = useExportConfigStore((s) => s.intro);
   const setIntro = useExportConfigStore((s) => s.setIntro);
+  const hasIntroWindow = intro.introCardEnabled || intro.bismillahTextEnabled || intro.bismillahAudioEnabled;
 
   return (
     <Panel title="Intro & Bismillah">
@@ -34,6 +36,13 @@ export function IntroPanel() {
           max={8000}
           step={250}
           onChange={(v) => setIntro({ introCardDurationMs: v })}
+        />
+      )}
+
+      {hasIntroWindow && (
+        <CardBackgroundPicker
+          value={intro.cardBackgroundClipId}
+          onChange={(clipId) => setIntro({ cardBackgroundClipId: clipId })}
         />
       )}
 

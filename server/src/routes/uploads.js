@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { persistLogoUpload } from '../lib/logoUpload.js';
 import { persistBackgroundVideoUpload } from '../lib/backgroundVideoUpload.js';
+import { persistCardImageUpload } from '../lib/cardImageUpload.js';
 import { generateBackgroundVideo } from '../lib/runwayVideoGen.js';
 import { createJob, getJob, updateJob } from '../lib/jobQueue.js';
 
@@ -59,6 +60,41 @@ router.post('/logo', (req, res) => {
       res.json({ logoId, url: `/uploads/logos/${logoId}`, width, height });
     } catch (validationErr) {
       console.error('[uploads] logo validation failed:', validationErr);
+      res.status(400).json({ error: validationErr.message ?? 'Invalid image.' });
+    }
+  });
+});
+
+// Same content-based-validation pattern and mimetype set as the logo
+// upload above -- a separate multer instance only so its route can stay
+// independently named/limited from the logo one.
+const uploadCardImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_MIMETYPES.has(file.mimetype)) {
+      cb(new Error('Only PNG, JPEG, or WebP images are accepted.'));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+router.post('/card-image', (req, res) => {
+  uploadCardImage.single('image')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message ?? 'Upload failed.' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded (expected field "image").' });
+    }
+
+    try {
+      const { cardImageUploadsDir, tmpDir } = req.app.locals;
+      const { imageId, width, height } = await persistCardImageUpload(req.file.buffer, cardImageUploadsDir, tmpDir);
+      res.json({ imageId, url: `/uploads/card-images/${imageId}`, width, height });
+    } catch (validationErr) {
+      console.error('[uploads] card image validation failed:', validationErr);
       res.status(400).json({ error: validationErr.message ?? 'Invalid image.' });
     }
   });

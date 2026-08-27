@@ -160,19 +160,24 @@ export function PreviewPane() {
             className={`text-white ${style.badges.surahBadge.variant === 'stacked-title-card' ? 'bg-black/60 rounded px-3 py-2 text-center' : ''}`}
           >
             {style.badges.surahBadge.variant === 'stacked-title-card' ? (
-              <div style={{ fontSize: 13 }}>
+              <div style={{ fontSize: Math.round(style.badges.surahBadge.fontSize * 0.6) }}>
                 <div>{chapter.nameSimple}</div>
                 <div className="opacity-80">{chapter.translatedName} • {chapter.id}</div>
               </div>
             ) : style.badges.surahBadge.variant === 'arabic-transliteration' ? (
               <div className="text-center drop-shadow">
-                <div style={{ fontFamily: FONT_REGISTRY.arabic[style.typography.arabicFont].family, fontSize: 16 }}>
+                <div
+                  style={{
+                    fontFamily: FONT_REGISTRY.arabic[style.typography.arabicFont].family,
+                    fontSize: Math.round((style.badges.surahBadge.fontSize + 6) * 0.6),
+                  }}
+                >
                   {chapter.nameArabic}
                 </div>
-                <div style={{ fontSize: 11 }}>{chapter.nameSimple.toUpperCase()}</div>
+                <div style={{ fontSize: Math.round(style.badges.surahBadge.fontSize * 0.5) }}>{chapter.nameSimple.toUpperCase()}</div>
               </div>
             ) : (
-              <span style={{ fontSize: 12 }} className="drop-shadow">
+              <span style={{ fontSize: Math.round(style.badges.surahBadge.fontSize * 0.55) }} className="drop-shadow">
                 {chapter.nameSimple} • {chapter.translatedName} • {chapter.id}
               </span>
             )}
@@ -187,7 +192,7 @@ export function PreviewPane() {
               color: style.badges.watermark.color,
               opacity: style.badges.watermark.opacity,
               fontFamily: 'Inter',
-              fontSize: 11,
+              fontSize: Math.round(style.badges.watermark.fontSize * 0.5),
             }}
           >
             {style.badges.watermark.text}
@@ -197,7 +202,12 @@ export function PreviewPane() {
         {/* Channel name badge */}
         {style.badges.channelNameBadge.enabled && style.badges.channelNameBadge.text && (
           <div
-            style={{ ...badgePositionStyle(style.badges.channelNameBadge.position), color: 'white', fontFamily: 'Inter', fontSize: 11 }}
+            style={{
+              ...badgePositionStyle(style.badges.channelNameBadge.position),
+              color: 'white',
+              fontFamily: 'Inter',
+              fontSize: Math.round(style.badges.channelNameBadge.fontSize * 0.55),
+            }}
           >
             {style.badges.channelNameBadge.text}
           </div>

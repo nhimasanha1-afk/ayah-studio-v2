@@ -6,22 +6,25 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import exportRouter from './routes/export.js';
 import uploadsRouter from './routes/uploads.js';
-import { OUTPUT_DIR, LOGO_UPLOADS_DIR, BACKGROUND_UPLOADS_DIR, TMP_DIR } from './lib/paths.js';
+import { OUTPUT_DIR, LOGO_UPLOADS_DIR, BACKGROUND_UPLOADS_DIR, CARD_IMAGE_UPLOADS_DIR, TMP_DIR } from './lib/paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = OUTPUT_DIR;
 const logoUploadsDir = LOGO_UPLOADS_DIR;
 const backgroundUploadsDir = BACKGROUND_UPLOADS_DIR;
+const cardImageUploadsDir = CARD_IMAGE_UPLOADS_DIR;
 const tmpDir = TMP_DIR;
 fs.mkdirSync(outputDir, { recursive: true });
 fs.mkdirSync(logoUploadsDir, { recursive: true });
 fs.mkdirSync(backgroundUploadsDir, { recursive: true });
+fs.mkdirSync(cardImageUploadsDir, { recursive: true });
 fs.mkdirSync(tmpDir, { recursive: true });
 
 const app = express();
 app.locals.outputDir = outputDir;
 app.locals.uploadsDir = logoUploadsDir;
 app.locals.backgroundUploadsDir = backgroundUploadsDir;
+app.locals.cardImageUploadsDir = cardImageUploadsDir;
 app.locals.tmpDir = tmpDir;
 
 app.use(cors());
@@ -29,6 +32,7 @@ app.use(express.json());
 app.use('/output', express.static(outputDir));
 app.use('/uploads/logos', express.static(logoUploadsDir));
 app.use('/uploads/backgrounds', express.static(backgroundUploadsDir));
+app.use('/uploads/card-images', express.static(cardImageUploadsDir));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });

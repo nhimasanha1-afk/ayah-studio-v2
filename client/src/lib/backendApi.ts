@@ -135,6 +135,24 @@ export async function uploadChannelLogo(file: File): Promise<LogoUploadResult> {
   return data as LogoUploadResult;
 }
 
+export interface CardImageUploadResult {
+  imageId: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+export async function uploadCardImage(file: File): Promise<CardImageUploadResult> {
+  const formData = new FormData();
+  formData.append('image', file);
+  const res = await fetch('/api/uploads/card-image', { method: 'POST', body: formData });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error ?? `Upload failed (${res.status})`);
+  }
+  return data as CardImageUploadResult;
+}
+
 export interface BackgroundVideoUploadResult {
   clipId: string;
   url: string;
