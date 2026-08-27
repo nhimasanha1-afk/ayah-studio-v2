@@ -210,17 +210,35 @@ export function PreviewPane() {
                         </span>
                       ))}
                       {/* This preview always fetches verse 1 of the chapter, so the
-                          ayah number is always "١" -- see useFirstVerse. U+06DD is
-                          the real Unicode end-of-ayah mark; only Amiri Quran (a
-                          Quranic-ligature-only companion font, never used for real
-                          sentence text) nests the digit inside its decorative
-                          circle -- matches server/src/lib/assBuilder.js's export
-                          rendering, which applies the same font swap inline. */}
+                          ayah number is always "١" -- see useFirstVerse. The real
+                          export (server/src/lib/assBuilder.js) nests this digit
+                          inside U+06DD's decorative circle via an Amiri Quran font
+                          ligature, verified correct through libass/HarfBuzz -- but
+                          confirmed via direct testing that Chrome's own text
+                          shaping does NOT apply that same ligature (renders as two
+                          disconnected glyphs, tried with rtl/lang="ar"/explicit
+                          OpenType features, none of it helped). Rather than depend
+                          on unpredictable cross-browser font-shaping behavior for
+                          this approximate preview, the circle is drawn directly
+                          with CSS instead -- guaranteed correct regardless of what
+                          the browser's shaping engine does with the real font. */}
                       {style.colors.showAyahNumbers && (
-                        <>
-                          {' '}
-                          <span style={{ fontFamily: 'Amiri Quran' }}>١۝</span>
-                        </>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '1.5em',
+                            height: '1.5em',
+                            marginInlineStart: '0.2em',
+                            borderRadius: '50%',
+                            border: '0.06em solid currentColor',
+                            fontSize: '0.55em',
+                            verticalAlign: 'middle',
+                          }}
+                        >
+                          ١
+                        </span>
                       )}
                     </p>
                     <p
