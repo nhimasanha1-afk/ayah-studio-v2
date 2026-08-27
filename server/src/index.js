@@ -45,8 +45,27 @@ app.use('/api/uploads', uploadsRouter);
 // `npm run dev` never has client/dist, so this block is a no-op there.
 const clientDistDir = path.join(__dirname, '..', '..', 'client', 'dist');
 if (fs.existsSync(clientDistDir)) {
-  app.use(express.static(clientDistDir));
+  // Without explicit Cache-Control, express.static sets no header at all,
+  // which leaves browsers free to apply their own heuristic caching to
+  // index.html -- confirmed via a real report that other browsers kept
+  // loading an old JS bundle after a deploy even after a normal reload,
+  // since index.html (which names the current hashed bundle) was the thing
+  // getting served stale. Vite's dist/assets/ files are content-hashed
+  // (a new build, a new filename) so those are safe to cache forever;
+  // index.html is the opposite -- it must always be revalidated so a
+  // reload always discovers the latest bundle.
+  app.use(
+    express.static(clientDistDir, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    })
+  );
   app.get(/^(?!\/api|\/output|\/uploads).*/, (req, res) => {
+    res.set('Cache-Control', 'no-cache');
     res.sendFile(path.join(clientDistDir, 'index.html'));
   });
 }
