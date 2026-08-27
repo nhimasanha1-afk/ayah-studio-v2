@@ -75,6 +75,48 @@ export async function fetchBackgroundLibrary(): Promise<BackgroundLibrary> {
   return data.categories;
 }
 
+export interface PreviewWord {
+  text: string;
+  startMs: number | null;
+  endMs: number | null;
+}
+
+export interface PreviewVerseTiming {
+  verseKey: string;
+  verseNumber: number;
+  startMs: number | null;
+  endMs: number | null;
+  translationText: string;
+  isEstimated: boolean;
+  words: PreviewWord[];
+}
+
+// Mirrors server/src/routes/export.js's /preview-data -- the exact same
+// fetchChapter/fetchVerses/fetchReciterAudioFile + buildCaptionData used by
+// the real export, just without the ffmpeg step. Real word-synced timing
+// and a real playable audio URL for the whole chapter, not an
+// approximation of just the first verse.
+export interface PreviewData {
+  chapter: { id: number; nameSimple: string; nameArabic: string; translatedName: string };
+  audioUrl: string;
+  anyEstimatedTiming: boolean;
+  verses: PreviewVerseTiming[];
+}
+
+export async function fetchPreviewData(chapterId: number, reciterId: number, translationId: number): Promise<PreviewData> {
+  const params = new URLSearchParams({
+    chapterId: String(chapterId),
+    reciterId: String(reciterId),
+    translationId: String(translationId),
+  });
+  const res = await fetch(`/api/export/preview-data?${params}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `Failed to load preview data (${res.status})`);
+  }
+  return res.json() as Promise<PreviewData>;
+}
+
 export interface LogoUploadResult {
   logoId: string;
   url: string;

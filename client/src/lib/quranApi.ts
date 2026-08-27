@@ -49,28 +49,3 @@ export async function fetchTranslations(): Promise<Translation[]> {
   const data = await getJson<{ translations: Translation[] }>(`${QURAN_API_BASE}/resources/translations?language=en`);
   return data.translations;
 }
-
-export interface PreviewVerse {
-  textUthmani: string;
-  translationText: string;
-}
-
-function stripTranslationMarkup(html: string): string {
-  return html
-    .replace(/<sup[^>]*>.*?<\/sup>/gi, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Fetches just verse 1 of a chapter, for a lightweight (non-timed) preview -- not the full export data. */
-export async function fetchFirstVerse(chapterId: number, translationId: number): Promise<PreviewVerse> {
-  const data = await getJson<{ verses: { text_uthmani: string; translations: { text: string }[] }[] }>(
-    `${QURAN_API_BASE}/verses/by_chapter/${chapterId}?language=en&translations=${translationId}&fields=text_uthmani&per_page=1`
-  );
-  const verse = data.verses[0];
-  return {
-    textUthmani: verse.text_uthmani.trim(),
-    translationText: stripTranslationMarkup(verse.translations[0]?.text ?? ''),
-  };
-}

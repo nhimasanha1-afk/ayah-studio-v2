@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
-import {
-  fetchChapters,
-  fetchFirstVerse,
-  fetchReciters,
-  fetchTranslations,
-  type Chapter,
-  type PreviewVerse,
-  type Reciter,
-  type Translation,
-} from './quranApi';
-import { fetchBackgroundLibrary } from './backendApi';
+import { fetchChapters, fetchReciters, fetchTranslations, type Chapter, type Reciter, type Translation } from './quranApi';
+import { fetchBackgroundLibrary, fetchPreviewData, type PreviewData } from './backendApi';
 import type { BackgroundLibrary } from './types';
 
 interface AsyncState<T> {
@@ -56,14 +47,14 @@ export function useBackgroundLibrary(): AsyncState<BackgroundLibrary> {
   return useAsync(fetchBackgroundLibrary);
 }
 
-/** Re-fetches whenever chapterId/translationId change, for the live preview. */
-export function useFirstVerse(chapterId: number, translationId: number): AsyncState<PreviewVerse> {
-  const [state, setState] = useState<AsyncState<PreviewVerse>>({ data: null, loading: true, error: null });
+/** Re-fetches whenever chapterId/reciterId/translationId change, for the live preview player. */
+export function usePreviewData(chapterId: number, reciterId: number, translationId: number): AsyncState<PreviewData> {
+  const [state, setState] = useState<AsyncState<PreviewData>>({ data: null, loading: true, error: null });
 
   useEffect(() => {
     let cancelled = false;
     setState({ data: null, loading: true, error: null });
-    fetchFirstVerse(chapterId, translationId)
+    fetchPreviewData(chapterId, reciterId, translationId)
       .then((data) => {
         if (!cancelled) setState({ data, loading: false, error: null });
       })
@@ -73,7 +64,7 @@ export function useFirstVerse(chapterId: number, translationId: number): AsyncSt
     return () => {
       cancelled = true;
     };
-  }, [chapterId, translationId]);
+  }, [chapterId, reciterId, translationId]);
 
   return state;
 }

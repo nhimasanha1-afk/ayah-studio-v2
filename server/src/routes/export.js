@@ -2,7 +2,9 @@ import { Router } from 'express';
 import path from 'node:path';
 import { probe } from '../lib/ffmpeg.js';
 import { runTestExport, testExportPath } from '../lib/testExport.js';
-import { runSurahExport } from '../lib/surahExport.js';
+import { runSurahExport, DEFAULT_RECITER_ID, DEFAULT_TRANSLATION_ID } from '../lib/surahExport.js';
+import { fetchChapter, fetchVerses, fetchReciterAudioFile } from '../lib/quranApi.js';
+import { buildCaptionData } from '../lib/captionData.js';
 import { BACKGROUND_LIBRARY } from '../lib/backgroundLibrary.js';
 import { createJob, getJob, updateJob } from '../lib/jobQueue.js';
 
@@ -10,6 +12,55 @@ const router = Router();
 
 router.get('/backgrounds', (req, res) => {
   res.json({ categories: BACKGROUND_LIBRARY });
+});
+
+// Real, word-synced timing data for the live browser preview player --
+// deliberately just the data-fetching half of the real export pipeline
+// (fetchChapter/fetchVerses/fetchReciterAudioFile + buildCaptionData, the
+// exact same functions runSurahExport uses), with no ffmpeg step at all.
+// The browser plays the real recitation audio directly from its CDN URL
+// (a plain <audio src> load, not a fetch(), so no CORS concerns) and
+// renders captions itself in sync with real playback time -- accurate,
+// not an approximation, for the parts it covers (word highlighting,
+// per-verse translation, real duration/scrubbing). It does not attempt to
+// replicate the intro/Bismillah window, background crossfades, or any
+// other export-only compositing.
+router.get('/preview-data', async (req, res) => {
+  try {
+    const chapterId = Number(req.query.chapterId ?? 112);
+    const reciterId = req.query.reciterId ? Number(req.query.reciterId) : DEFAULT_RECITER_ID;
+    const translationId = req.query.translationId ? Number(req.query.translationId) : DEFAULT_TRANSLATION_ID;
+
+    const [chapter, verses, audioFile] = await Promise.all([
+      fetchChapter(chapterId),
+      fetchVerses(chapterId, translationId),
+      fetchReciterAudioFile(reciterId, chapterId),
+    ]);
+    const captionData = buildCaptionData({ verses, audioFile });
+
+    res.json({
+      chapter: {
+        id: chapter.id,
+        nameSimple: chapter.name_simple,
+        nameArabic: chapter.name_arabic,
+        translatedName: chapter.translated_name.name,
+      },
+      audioUrl: audioFile.audio_url,
+      anyEstimatedTiming: captionData.anyEstimated,
+      verses: captionData.verses.map((v) => ({
+        verseKey: v.verseKey,
+        verseNumber: v.verseNumber,
+        startMs: v.startMs,
+        endMs: v.endMs,
+        translationText: v.translationText,
+        isEstimated: v.isEstimated,
+        words: v.words.map((w) => ({ text: w.text, startMs: w.startMs, endMs: w.endMs })),
+      })),
+    });
+  } catch (err) {
+    console.error('[export] preview-data failed:', err);
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
 });
 
 router.post('/test-export', async (req, res) => {

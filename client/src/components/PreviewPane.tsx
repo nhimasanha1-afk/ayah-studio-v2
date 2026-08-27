@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useBackgroundLibrary, useChapters, useFirstVerse } from '../lib/hooks';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useBackgroundLibrary, usePreviewData } from '../lib/hooks';
 import { badgePositionStyle, introTextTopPct, scrimStyle } from '../lib/previewLayout';
 import { FONT_REGISTRY } from '../lib/types';
 import { isRtlScript, scriptForLanguage, TRANSLATION_SCRIPT_FONTS } from '../lib/translationFonts';
+import { toArabicIndicNumerals } from '../lib/arabicNumerals';
 import { useExportConfigStore } from '../state/exportConfigStore';
 
 /** Mirrors server/src/lib/assBuilder.js's resolveTranslationFontFamily. */
@@ -18,8 +19,39 @@ const LOGO_SHAPE_RADIUS: Record<string, string> = {
   circle: '50%',
 };
 
+function formatTime(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** A circle drawn with CSS around the digit -- see the ayah-number comment
+    below for why this doesn't rely on a font ligature. */
+function AyahNumberBadge({ verseNumber }: { verseNumber: number }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '1.5em',
+        height: '1.5em',
+        marginInlineStart: '0.2em',
+        borderRadius: '50%',
+        border: '0.06em solid currentColor',
+        fontSize: '0.55em',
+        verticalAlign: 'middle',
+      }}
+    >
+      {toArabicIndicNumerals(verseNumber)}
+    </span>
+  );
+}
+
 export function PreviewPane() {
   const chapterId = useExportConfigStore((s) => s.chapterId);
+  const reciterId = useExportConfigStore((s) => s.reciterId);
   const translationId = useExportConfigStore((s) => s.translationId);
   const translationLanguage = useExportConfigStore((s) => s.translationLanguage);
   const style = useExportConfigStore((s) => s.style);
@@ -27,11 +59,10 @@ export function PreviewPane() {
   const background = useExportConfigStore((s) => s.background);
   const aspectRatio = useExportConfigStore((s) => s.aspectRatio);
 
-  const chapters = useChapters();
-  const verse = useFirstVerse(chapterId, translationId);
+  const preview = usePreviewData(chapterId, reciterId, translationId);
   const library = useBackgroundLibrary();
 
-  const chapter = chapters.data?.find((c) => c.id === chapterId);
+  const chapter = preview.data?.chapter;
   const hasIntroWindow = intro.introCardEnabled || intro.bismillahTextEnabled || intro.bismillahAudioEnabled;
   const [showIntro, setShowIntro] = useState(false);
 
@@ -41,11 +72,70 @@ export function PreviewPane() {
     return allClips.find((c) => c.id === background.clipIds[0])?.url ?? null;
   }, [background.clipIds, library.data]);
 
-  const arabicWords = verse.data?.textUthmani.split(/\s+/) ?? [];
   const translationScript = scriptForLanguage(translationLanguage);
   const translationFontFamily = resolveTranslationFontFamily(style.typography.latinFont, translationScript);
   const [videoFailed, setVideoFailed] = useState(false);
   useEffect(() => setVideoFailed(false), [firstClipUrl]);
+
+  // Real playback state -- this is a genuine <audio> player over the real
+  // recitation audio (a plain <audio src>, not a fetch(), so no CORS
+  // concerns loading it from Quran.com's CDN), not a simulated timeline.
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const bgVideoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentMs, setCurrentMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
+
+  // A new chapter/reciter means a new <audio src>, which the browser
+  // implicitly resets -- mirror that in our own state too.
+  useEffect(() => {
+    setIsPlaying(false);
+    setCurrentMs(0);
+    setDurationMs(0);
+  }, [preview.data?.audioUrl]);
+
+  // Keep the looping background video's own play state in lockstep with the
+  // real audio, so pausing/playing the recitation pauses/plays the visual
+  // background too, instead of it looping independently forever.
+  useEffect(() => {
+    const v = bgVideoRef.current;
+    if (!v) return;
+    if (isPlaying) v.play().catch(() => {});
+    else v.pause();
+  }, [isPlaying, firstClipUrl]);
+
+  function togglePlay() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) audio.play().catch(() => {});
+    else audio.pause();
+  }
+
+  function handleSeek(ms: number) {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = ms / 1000;
+    setCurrentMs(ms);
+  }
+
+  // The verse whose real [startMs, endMs) window contains the current
+  // playback position -- before playback starts this is verse 1, and once
+  // playback runs past the last verse's real end it stays on that verse
+  // rather than going blank.
+  const currentVerse = useMemo(() => {
+    const verses = preview.data?.verses;
+    if (!verses || verses.length === 0) return null;
+    const match = verses.find((v) => v.startMs != null && v.endMs != null && currentMs >= v.startMs && currentMs < v.endMs);
+    if (match) return match;
+    return currentMs <= 0 ? verses[0] : verses[verses.length - 1];
+  }, [preview.data, currentMs]);
+
+  const currentWordIndex = useMemo(() => {
+    if (!currentVerse) return -1;
+    return currentVerse.words.findIndex(
+      (w) => w.startMs != null && w.endMs != null && currentMs >= w.startMs && currentMs < w.endMs
+    );
+  }, [currentVerse, currentMs]);
 
   const isVertical = aspectRatio === '9:16';
 
@@ -63,9 +153,9 @@ export function PreviewPane() {
         {firstClipUrl && !videoFailed ? (
           <video
             key={firstClipUrl}
+            ref={bgVideoRef}
             className="absolute inset-0 h-full w-full object-cover"
             src={firstClipUrl}
-            autoPlay
             muted
             loop
             playsInline
@@ -86,19 +176,19 @@ export function PreviewPane() {
           >
             {style.badges.surahBadge.variant === 'stacked-title-card' ? (
               <div style={{ fontSize: 13 }}>
-                <div>{chapter.name_simple}</div>
-                <div className="opacity-80">{chapter.translated_name.name} • {chapter.id}</div>
+                <div>{chapter.nameSimple}</div>
+                <div className="opacity-80">{chapter.translatedName} • {chapter.id}</div>
               </div>
             ) : style.badges.surahBadge.variant === 'arabic-transliteration' ? (
               <div className="text-center drop-shadow">
                 <div style={{ fontFamily: FONT_REGISTRY.arabic[style.typography.arabicFont].family, fontSize: 16 }}>
-                  {chapter.name_arabic}
+                  {chapter.nameArabic}
                 </div>
-                <div style={{ fontSize: 11 }}>{chapter.name_simple.toUpperCase()}</div>
+                <div style={{ fontSize: 11 }}>{chapter.nameSimple.toUpperCase()}</div>
               </div>
             ) : (
               <span style={{ fontSize: 12 }} className="drop-shadow">
-                {chapter.name_simple} • {chapter.translated_name.name} • {chapter.id}
+                {chapter.nameSimple} • {chapter.translatedName} • {chapter.id}
               </span>
             )}
           </div>
@@ -191,8 +281,9 @@ export function PreviewPane() {
               </>
             ) : (
               <>
-                {verse.loading && <p className="text-xs text-neutral-500">Loading verse…</p>}
-                {verse.data && (
+                {preview.loading && <p className="text-xs text-neutral-500">Loading preview…</p>}
+                {preview.error && <p className="text-xs text-red-400">Failed to load preview: {preview.error}</p>}
+                {currentVerse && (
                   <>
                     <p
                       dir="rtl"
@@ -203,43 +294,24 @@ export function PreviewPane() {
                         WebkitTextStroke: `${style.colors.outlineWidth * 0.5}px ${style.colors.outlineColor}`,
                       }}
                     >
-                      {arabicWords.map((word, i) => (
-                        <span key={i} style={i === 0 ? { color: style.colors.highlightColor, WebkitTextStroke: 0 } : undefined}>
-                          {word}
-                          {i < arabicWords.length - 1 ? ' ' : ''}
+                      {currentVerse.words.map((word, i) => (
+                        <span key={i} style={i === currentWordIndex ? { color: style.colors.highlightColor, WebkitTextStroke: 0 } : undefined}>
+                          {word.text}
+                          {i < currentVerse.words.length - 1 ? ' ' : ''}
                         </span>
                       ))}
-                      {/* This preview always fetches verse 1 of the chapter, so the
-                          ayah number is always "١" -- see useFirstVerse. The real
-                          export (server/src/lib/assBuilder.js) nests this digit
-                          inside U+06DD's decorative circle via an Amiri Quran font
-                          ligature, verified correct through libass/HarfBuzz -- but
-                          confirmed via direct testing that Chrome's own text
+                      {/* The real export (server/src/lib/assBuilder.js) nests this
+                          digit inside U+06DD's decorative circle via an Amiri Quran
+                          font ligature, verified correct through libass/HarfBuzz --
+                          but confirmed via direct testing that Chrome's own text
                           shaping does NOT apply that same ligature (renders as two
                           disconnected glyphs, tried with rtl/lang="ar"/explicit
                           OpenType features, none of it helped). Rather than depend
                           on unpredictable cross-browser font-shaping behavior for
-                          this approximate preview, the circle is drawn directly
-                          with CSS instead -- guaranteed correct regardless of what
-                          the browser's shaping engine does with the real font. */}
-                      {style.colors.showAyahNumbers && (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '1.5em',
-                            height: '1.5em',
-                            marginInlineStart: '0.2em',
-                            borderRadius: '50%',
-                            border: '0.06em solid currentColor',
-                            fontSize: '0.55em',
-                            verticalAlign: 'middle',
-                          }}
-                        >
-                          ١
-                        </span>
-                      )}
+                          this preview, the circle is drawn directly with CSS
+                          instead -- guaranteed correct regardless of what the
+                          browser's shaping engine does with the real font. */}
+                      {style.colors.showAyahNumbers && <AyahNumberBadge verseNumber={currentVerse.verseNumber} />}
                     </p>
                     <p
                       dir={isRtlScript(translationScript) ? 'rtl' : undefined}
@@ -249,8 +321,8 @@ export function PreviewPane() {
                         color: style.colors.translationTextColor,
                       }}
                     >
-                      {style.colors.showAyahNumbers && '(1) '}
-                      {verse.data.translationText}
+                      {style.colors.showAyahNumbers && `(${currentVerse.verseNumber}) `}
+                      {currentVerse.translationText}
                     </p>
                   </>
                 )}
@@ -266,16 +338,62 @@ export function PreviewPane() {
           >
             {chapter && (
               <>
-                <div>{chapter.name_simple}</div>
-                <div className="opacity-80">{chapter.translated_name.name} • {chapter.id}</div>
+                <div>{chapter.nameSimple}</div>
+                <div className="opacity-80">{chapter.translatedName} • {chapter.id}</div>
               </>
             )}
           </div>
         )}
       </div>
 
+      {/* Real playback controls over the real recitation audio -- hidden
+          while looking at the (static, non-timed) intro/Bismillah view
+          above, since that's an illustration of a screen rather than a
+          moment on this timeline. */}
+      {!showIntro && preview.data && (
+        <div className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/50 px-3 py-2">
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-500"
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? '⏸' : '▶'}
+          </button>
+          <span className="w-9 shrink-0 text-right text-xs tabular-nums text-neutral-400">{formatTime(currentMs)}</span>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(durationMs, 1)}
+            step={100}
+            value={Math.min(currentMs, durationMs || 0)}
+            onChange={(e) => handleSeek(Number(e.target.value))}
+            className="flex-1 accent-emerald-500"
+          />
+          <span className="w-9 shrink-0 text-xs tabular-nums text-neutral-400">{formatTime(durationMs)}</span>
+        </div>
+      )}
+
+      {preview.data && (
+        <audio
+          ref={audioRef}
+          src={preview.data.audioUrl}
+          preload="metadata"
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onEnded={() => setIsPlaying(false)}
+          onTimeUpdate={(e) => setCurrentMs(e.currentTarget.currentTime * 1000)}
+          onLoadedMetadata={(e) => setDurationMs(e.currentTarget.duration * 1000)}
+          className="hidden"
+        />
+      )}
+
       <div className="flex items-center justify-between text-xs text-neutral-500">
-        <span>Approximation only — not frame-accurate. Actual timing/highlighting comes from the export.</span>
+        <span>
+          {preview.data?.anyEstimatedTiming
+            ? 'Some verse timing is estimated (real per-word data wasn\'t available for every verse).'
+            : 'Real word-synced recitation audio -- background crossfades, the intro/Bismillah window, and outro are export-only and not shown here.'}
+        </span>
         {hasIntroWindow && (
           <div className="flex gap-1">
             <button
