@@ -136,13 +136,15 @@ export function buildAssSubtitles(
       const word = verse.words[i];
       if (word.startMs == null || word.endMs == null) continue;
 
-      const rendered = words
-        .map((text, j) =>
-          j === i
-            ? `{\\c${highlightColor}&\\shad0}${text}{\\c${arabicColor}&\\shad${shadowDepth}}`
-            : text
-        )
-        .join(' ');
+      const rendered = style.colors.wordHighlightEnabled
+        ? words
+            .map((text, j) =>
+              j === i
+                ? `{\\c${highlightColor}&\\shad0}${text}{\\c${arabicColor}&\\shad${shadowDepth}}`
+                : text
+            )
+            .join(' ')
+        : words.join(' ');
 
       lines.push(dialogueLine('Arabic', word.startMs, word.endMs, fadeTag + rendered + arabicNumberSuffix));
     }

@@ -18,11 +18,18 @@ export function ColorsTab() {
         value={colors.translationTextColor}
         onChange={(v) => setColors({ translationTextColor: v })}
       />
-      <ColorField
-        label="Word highlight color"
-        value={colors.highlightColor}
-        onChange={(v) => setColors({ highlightColor: v })}
+      <CheckboxField
+        label="Highlight active word"
+        checked={colors.wordHighlightEnabled}
+        onChange={(v) => setColors({ wordHighlightEnabled: v })}
       />
+      {colors.wordHighlightEnabled && (
+        <ColorField
+          label="Word highlight color"
+          value={colors.highlightColor}
+          onChange={(v) => setColors({ highlightColor: v })}
+        />
+      )}
       <ColorField label="Outline color" value={colors.outlineColor} onChange={(v) => setColors({ outlineColor: v })} />
 
       <NumberField label="Outline width" value={colors.outlineWidth} min={0} max={6} onChange={(v) => setColors({ outlineWidth: v })} />

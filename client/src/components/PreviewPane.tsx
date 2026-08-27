@@ -280,7 +280,14 @@ export function PreviewPane() {
                       }}
                     >
                       {currentVerse.words.map((word, i) => (
-                        <span key={i} style={i === currentWordIndex ? { color: style.colors.highlightColor, WebkitTextStroke: 0 } : undefined}>
+                        <span
+                          key={i}
+                          style={
+                            style.colors.wordHighlightEnabled && i === currentWordIndex
+                              ? { color: style.colors.highlightColor, WebkitTextStroke: 0 }
+                              : undefined
+                          }
+                        >
                           {word.text}
                           {i < currentVerse.words.length - 1 ? ' ' : ''}
                         </span>

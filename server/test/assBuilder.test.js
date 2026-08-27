@@ -128,3 +128,13 @@ test('the Arabic ayah number always renders in the normal (non-highlighted) colo
   // normal arabic color, not leave the highlight color active.
   assert.match(arabicText, /\{\\c&H00FFFFFF&\\shad\d+\}﴿٣﴾\{\\r\}$/);
 });
+
+test('wordHighlightEnabled: false -> no per-word color override anywhere on the Arabic line', () => {
+  const style = resolveStyle({ colors: { wordHighlightEnabled: false } });
+  const ass = buildAssSubtitles(captionData, style, layout);
+  const arabicLines = dialogueLines(ass, 'Arabic');
+  for (const line of arabicLines) {
+    const arabicText = line.split(',').slice(9).join(',');
+    assert.ok(!arabicText.includes('{\\c'), `expected no color override, got: ${arabicText}`);
+  }
+});

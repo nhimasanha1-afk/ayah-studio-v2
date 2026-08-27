@@ -57,6 +57,7 @@ export const DEFAULT_STYLE = {
     arabicTextColor: '#FFFFFF',
     translationTextColor: '#E6E6E6',
     highlightColor: '#FFD700',
+    wordHighlightEnabled: true,
     outlineColor: '#000000',
     outlineWidth: 2,
     shadowDepth: 1,

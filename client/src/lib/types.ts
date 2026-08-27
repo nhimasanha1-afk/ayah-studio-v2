@@ -56,6 +56,7 @@ export interface StyleConfig {
     arabicTextColor: string;
     translationTextColor: string;
     highlightColor: string;
+    wordHighlightEnabled: boolean;
     outlineColor: string;
     outlineWidth: number;
     shadowDepth: number;
@@ -86,6 +87,7 @@ export const DEFAULT_STYLE: StyleConfig = {
     arabicTextColor: '#FFFFFF',
     translationTextColor: '#E6E6E6',
     highlightColor: '#FFD700',
+    wordHighlightEnabled: true,
     outlineColor: '#000000',
     outlineWidth: 2,
     shadowDepth: 1,
