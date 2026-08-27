@@ -211,10 +211,17 @@ export function PreviewPane() {
                       ))}
                       {/* This preview always fetches verse 1 of the chapter, so the
                           ayah number is always "١" -- see useFirstVerse. U+06DD is
-                          the real Unicode end-of-ayah mark; a real Arabic-script
-                          font renders it as a decorative circle around the digit,
-                          matching server/src/lib/assBuilder.js's export rendering. */}
-                      {style.colors.showAyahNumbers && ' ١۝'}
+                          the real Unicode end-of-ayah mark; only Amiri Quran (a
+                          Quranic-ligature-only companion font, never used for real
+                          sentence text) nests the digit inside its decorative
+                          circle -- matches server/src/lib/assBuilder.js's export
+                          rendering, which applies the same font swap inline. */}
+                      {style.colors.showAyahNumbers && (
+                        <>
+                          {' '}
+                          <span style={{ fontFamily: 'Amiri Quran' }}>١۝</span>
+                        </>
+                      )}
                     </p>
                     <p
                       dir={isRtlScript(translationScript) ? 'rtl' : undefined}

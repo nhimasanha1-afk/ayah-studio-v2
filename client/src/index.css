@@ -20,6 +20,13 @@
   src: url('/fonts/Inter-Regular.ttf') format('truetype');
   font-display: swap;
 }
+/* Used only for the inline ayah-number marker -- see AYAH_MARKER_FONT in
+   server/src/lib/styleConfig.js for why this specific font is required. */
+@font-face {
+  font-family: 'Amiri Quran';
+  src: url('/fonts/AmiriQuran.ttf') format('truetype');
+  font-display: swap;
+}
 
 /* One font per non-Latin/non-Cyrillic/non-Arabic translation script -- see
    client/src/lib/translationFonts.ts. Mirrors server/assets/fonts. */

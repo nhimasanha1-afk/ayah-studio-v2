@@ -26,16 +26,21 @@ function App() {
           <BackgroundPanel />
         </div>
 
-        {/* Only the preview (fixed aspect ratio, bounded height) is sticky --
-            it stays pinned while scrolling the options on the left. ExportBar
-            is a normal sibling below it, in ordinary page flow: its content
-            grows once an export finishes (video player, download links), and
-            a plain page scroll reveals that growth naturally. An earlier
-            version wrapped both in one sticky+max-height+overflow-auto box,
-            which technically kept the video reachable but only via scrolling
-            inside that specific small nested panel -- not obvious, and easy
-            to mistake for the video simply not showing up. */}
-        <div className="space-y-4 self-start">
+        {/* This column deliberately keeps CSS grid's default stretch (no
+            self-start) so it's exactly as tall as the left column, even
+            though its own content (preview + export bar) is much shorter --
+            position:sticky can only stay "stuck" within its containing
+            block's height, so a short containing block (self-start) meant
+            the preview ran out of room to follow and got left behind well
+            before the end of the (much longer) left column, confirmed via a
+            real report and reproduced directly. With the tall containing
+            block restored, only the inner wrapper below is sticky, so it
+            now has the same scroll range as the left column to follow
+            within. ExportBar is a normal sibling in ordinary page flow
+            right after it, so its growth once an export finishes (video
+            player, download links) is reachable via a plain scroll near the
+            top, same as before. */}
+        <div className="space-y-4">
           <div className="sticky top-6">
             <PreviewPane />
           </div>

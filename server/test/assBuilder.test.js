@@ -108,9 +108,11 @@ test('showAyahNumbers on: Arabic line gets the Arabic-Indic numeral appended aft
 
   // Arabic: number (plus the real Quranic end-of-ayah decoration mark)
   // comes after the word text, mirroring how the sentence naturally ends
-  // on screen-left for RTL text.
+  // on screen-left for RTL text. It's wrapped in an inline font override to
+  // AYAH_MARKER_FONT (the only bundled font that nests the digit inside
+  // U+06DD's decorative circle) and reset back afterward with {\r}.
   const arabicText = arabicLine.split(',').slice(9).join(',');
-  assert.match(arabicText, /قُلْ.*٣۝$/);
+  assert.match(arabicText, /قُلْ.*\{\\c&H[0-9A-F]+&\\shad\d+\\fnAmiri Quran\}٣۝\{\\r\}$/);
 
   // Translation: number is a prefix at the very start of the line, per an
   // explicit user choice to keep both numbers on the left even though
@@ -124,7 +126,7 @@ test('the Arabic ayah number always renders in the normal (non-highlighted) colo
   const ass = buildAssSubtitles(captionData, style, layout);
   const [arabicLine] = dialogueLines(ass, 'Arabic');
   const arabicText = arabicLine.split(',').slice(9).join(',');
-  // The last override tag before the numeral must reset to the normal
-  // arabic color, not leave the highlight color active.
-  assert.match(arabicText, /\{\\c&H00FFFFFF&\\shad\d+\} ٣۝$/);
+  // The override block immediately before the numeral must reset to the
+  // normal arabic color, not leave the highlight color active.
+  assert.match(arabicText, /\{\\c&H00FFFFFF&\\shad\d+\\fnAmiri Quran\}٣۝\{\\r\}$/);
 });

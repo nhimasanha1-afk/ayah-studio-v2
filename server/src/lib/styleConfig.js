@@ -38,6 +38,19 @@ export const TRANSLATION_SCRIPT_FONTS = {
   thai: { family: 'Noto Sans Thai', file: 'NotoSansThai-Regular.ttf' },
 };
 
+// Used only for the inline ayah-number marker (Arabic-Indic digits + U+06DD
+// ARABIC END OF AYAH), never for real Arabic sentence text -- confirmed via
+// real rendered test frames that neither bundled general-purpose Arabic
+// font (Noto Naskh Arabic, Amiri) nests the digit inside U+06DD's
+// decorative circle; they render as two separate adjacent glyphs. Amiri
+// Quran is a real companion font from the same upstream project
+// (github.com/aliftype/amiri) built specifically for Quranic verse-number
+// ligatures -- it does render the nested glyph correctly, but only
+// contains Quranic-specific glyphs, not general Arabic letterforms, so it
+// must only ever be applied via an inline {\fn} override around the
+// marker itself, never as a whole line's font.
+export const AYAH_MARKER_FONT = { family: 'Amiri Quran', file: 'AmiriQuran.ttf' };
+
 export const POSITIONS = ['top-left', 'top-center', 'top-right', 'bottom-left', 'bottom-center', 'bottom-right'];
 export const TEXT_POSITIONS = ['upper-third', 'center', 'lower-third'];
 export const LOGO_SHAPES = ['square', 'circle', 'rounded'];
