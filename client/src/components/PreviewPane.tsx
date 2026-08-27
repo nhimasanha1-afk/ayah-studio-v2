@@ -26,27 +26,12 @@ function formatTime(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** A circle drawn with CSS around the digit -- see the ayah-number comment
-    below for why this doesn't rely on a font ligature. */
+/** Mirrors server/src/lib/assBuilder.js's ﴿N﴾ ornate-parenthesis marker --
+    plain text in the line's own font, since these are ordinary glyphs in
+    both bundled Arabic fonts (unlike the old U+06DD circle ligature, which
+    needed a special font and didn't shape the same way in Chrome). */
 function AyahNumberBadge({ verseNumber }: { verseNumber: number }) {
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '1.5em',
-        height: '1.5em',
-        marginInlineStart: '0.2em',
-        borderRadius: '50%',
-        border: '0.06em solid currentColor',
-        fontSize: '0.55em',
-        verticalAlign: 'middle',
-      }}
-    >
-      {toArabicIndicNumerals(verseNumber)}
-    </span>
-  );
+  return <span style={{ marginInlineStart: '0.2em' }}>{'﴿' + toArabicIndicNumerals(verseNumber) + '﴾'}</span>;
 }
 
 export function PreviewPane() {
@@ -300,17 +285,6 @@ export function PreviewPane() {
                           {i < currentVerse.words.length - 1 ? ' ' : ''}
                         </span>
                       ))}
-                      {/* The real export (server/src/lib/assBuilder.js) nests this
-                          digit inside U+06DD's decorative circle via an Amiri Quran
-                          font ligature, verified correct through libass/HarfBuzz --
-                          but confirmed via direct testing that Chrome's own text
-                          shaping does NOT apply that same ligature (renders as two
-                          disconnected glyphs, tried with rtl/lang="ar"/explicit
-                          OpenType features, none of it helped). Rather than depend
-                          on unpredictable cross-browser font-shaping behavior for
-                          this preview, the circle is drawn directly with CSS
-                          instead -- guaranteed correct regardless of what the
-                          browser's shaping engine does with the real font. */}
                       {style.colors.showAyahNumbers && <AyahNumberBadge verseNumber={currentVerse.verseNumber} />}
                     </p>
                     <p

@@ -1,6 +1,6 @@
 import { hexToAssColor } from './colorUtils.js';
 import { captionVerticalLayout } from './layout.js';
-import { FONT_REGISTRY, TRANSLATION_SCRIPT_FONTS, AYAH_MARKER_FONT } from './styleConfig.js';
+import { FONT_REGISTRY, TRANSLATION_SCRIPT_FONTS } from './styleConfig.js';
 import { scriptForLanguage } from './translationFonts.js';
 import { toArabicIndicNumerals } from './arabicNumerals.js';
 
@@ -121,18 +121,14 @@ export function buildAssSubtitles(
     // here the English number is a prefix at the start of the line instead
     // of a suffix at its (right-side) end.
     //
-    // U+06DD ARABIC END OF AYAH is the real Unicode-standard way to encode
-    // a Quranic verse-number marker: placed right after Arabic-Indic
-    // digits, a real Quranic-ligature-aware font nests the digit inside a
-    // small decorative circular ornament. Neither bundled general-purpose
-    // Arabic font does this (confirmed via real rendered frames -- they
-    // draw the digit and the ornament as two separate adjacent glyphs), so
-    // the marker specifically gets an inline {\fn} override to
-    // AYAH_MARKER_FONT (a real Quranic-ligature font that only contains
-    // marker glyphs, never used for the surrounding sentence text) and a
-    // {\r} to return to the line's normal font afterward.
+    // U+FD3E/U+FD3F ORNATE LEFT/RIGHT PARENTHESIS are the classic Quranic
+    // typesetting brackets used to enclose a verse number (e.g. ﴿٣﴾),
+    // matching how the reference app decorates its ayah markers. Both
+    // bundled Arabic fonts (Noto Naskh Arabic, Amiri) already include these
+    // glyphs as ordinary characters -- no font override or ligature is
+    // needed the way the old nested-circle marker required.
     const arabicNumberSuffix = style.colors.showAyahNumbers
-      ? ` {\\c${arabicColor}&\\shad${shadowDepth}\\fn${AYAH_MARKER_FONT.family}}${toArabicIndicNumerals(verse.verseNumber)}۝{\\r}`
+      ? ` {\\c${arabicColor}&\\shad${shadowDepth}}﴿${toArabicIndicNumerals(verse.verseNumber)}﴾{\\r}`
       : '';
     const translationNumberPrefix = style.colors.showAyahNumbers ? `(${verse.verseNumber}) ` : '';
 
