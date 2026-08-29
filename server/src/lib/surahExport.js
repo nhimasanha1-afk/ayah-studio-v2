@@ -219,7 +219,7 @@ export async function runSurahExport({
   const introCardEnabled = Boolean(introOverrides.introCardEnabled);
   const bismillahTextEnabled = Boolean(introOverrides.bismillahTextEnabled);
   const bismillahAudioEnabled = Boolean(introOverrides.bismillahAudioEnabled);
-  const introCardDurationMs = introOverrides.introCardDurationMs ?? 3000;
+  const introCardDurationMs = introOverrides.introCardDurationMs ?? 6000;
   const audioSyncOffsetMs = Number(audioSyncOverrides.offsetMs ?? 0);
   const volumeMultiplier = Number(audioSyncOverrides.volumeMultiplier ?? 1);
   const verseDisplayDelayMs = Number(captionTimingOverrides.displayDelayMs ?? 0);

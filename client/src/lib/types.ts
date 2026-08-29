@@ -196,7 +196,7 @@ export const DEFAULT_INTRO: IntroConfig = {
   introCardEnabled: false,
   bismillahTextEnabled: false,
   bismillahAudioEnabled: false,
-  introCardDurationMs: 3000,
+  introCardDurationMs: 6000,
   cardBackgroundClipId: null,
 };
 

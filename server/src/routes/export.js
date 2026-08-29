@@ -22,9 +22,11 @@ router.get('/backgrounds', (req, res) => {
 // (a plain <audio src> load, not a fetch(), so no CORS concerns) and
 // renders captions itself in sync with real playback time -- accurate,
 // not an approximation, for the parts it covers (word highlighting,
-// per-verse translation, real duration/scrubbing). It does not attempt to
-// replicate the intro/Bismillah window, background crossfades, or any
-// other export-only compositing.
+// per-verse translation, real duration/scrubbing, and now the real
+// Bismillah audio + its real cut boundary, so the client can build a
+// genuine intro-window playback phase too). Background crossfades and the
+// intro/outro cards' own custom background media are still export-only
+// compositing, not reproduced pixel-for-pixel here.
 router.get('/preview-data', async (req, res) => {
   try {
     const chapterId = Number(req.query.chapterId ?? 112);
@@ -38,6 +40,17 @@ router.get('/preview-data', async (req, res) => {
     ]);
     const captionData = buildCaptionData({ verses, audioFile });
 
+    // Bismillah has no standalone audio file -- it's verse 1 of Al-Fatiha
+    // (mirrors bismillahAudio.js's server-export logic). For the preview we
+    // don't need to download/crop anything: the reciter's real Al-Fatiha
+    // CDN URL is directly playable by the browser, and the real
+    // forced-alignment boundary where verse 2 begins (never verse 1's own
+    // end-timestamp, which can be short of the true audio) tells the client
+    // exactly when to stop it. Reuses the already-fetched audioFile when the
+    // selected chapter IS Al-Fatiha, instead of a redundant second fetch.
+    const bismillahSourceFile = chapterId === 1 ? audioFile : await fetchReciterAudioFile(reciterId, 1);
+    const verse2Timing = bismillahSourceFile.verse_timings?.find((vt) => vt.verse_key === '1:2');
+
     res.json({
       chapter: {
         id: chapter.id,
@@ -46,6 +59,8 @@ router.get('/preview-data', async (req, res) => {
         translatedName: chapter.translated_name.name,
       },
       audioUrl: audioFile.audio_url,
+      bismillahAudioUrl: bismillahSourceFile.audio_url,
+      bismillahAudioDurationMs: verse2Timing ? verse2Timing.timestamp_from : null,
       anyEstimatedTiming: captionData.anyEstimated,
       verses: captionData.verses.map((v) => ({
         verseKey: v.verseKey,

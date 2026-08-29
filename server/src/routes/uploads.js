@@ -4,6 +4,7 @@ import { persistLogoUpload } from '../lib/logoUpload.js';
 import { persistBackgroundVideoUpload } from '../lib/backgroundVideoUpload.js';
 import { persistCardImageUpload } from '../lib/cardImageUpload.js';
 import { generateBackgroundVideo } from '../lib/runwayVideoGen.js';
+import { generateCardImage } from '../lib/runwayImageGen.js';
 import { createJob, getJob, updateJob } from '../lib/jobQueue.js';
 
 const ALLOWED_MIMETYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
@@ -159,6 +160,46 @@ router.post('/background-video/generate', (req, res) => {
 });
 
 router.get('/background-video/generate/jobs/:jobId', (req, res) => {
+  const job = getJob(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  res.json(job);
+});
+
+// AI card-image generation via Runway (gen4_image text-to-image) -- same
+// real, paid, async job pattern as background-video/generate above, just
+// for a single still image instead of a video clip.
+router.post('/card-image/generate', (req, res) => {
+  const { prompt, aspectRatio } = req.body ?? {};
+  const { cardImageUploadsDir, tmpDir } = req.app.locals;
+
+  const job = createJob();
+  res.status(202).json({ jobId: job.id, status: job.status });
+
+  updateJob(job.id, { status: 'running', stage: 'generating', progress: 0 });
+  generateCardImage({
+    prompt,
+    aspectRatio,
+    uploadsDir: cardImageUploadsDir,
+    tmpDir,
+    onProgress: (fraction) => updateJob(job.id, { stage: 'generating', progress: fraction }),
+  })
+    .then(({ imageId, width, height }) => {
+      updateJob(job.id, {
+        status: 'done',
+        stage: 'done',
+        progress: 1,
+        result: { imageId, url: `/uploads/card-images/${imageId}`, width, height },
+      });
+    })
+    .catch((err) => {
+      console.error('[uploads] card image generation failed:', err);
+      updateJob(job.id, { status: 'error', error: err.message ?? String(err) });
+    });
+});
+
+router.get('/card-image/generate/jobs/:jobId', (req, res) => {
   const job = getJob(req.params.jobId);
   if (!job) {
     return res.status(404).json({ error: 'Job not found' });

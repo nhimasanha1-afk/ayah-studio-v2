@@ -48,7 +48,7 @@ export function computeIntroTimingWindow({
   bismillahTextEnabled,
   bismillahAudioEnabled,
   bismillahAudioDurationMs,
-  introCardDurationMs = 3000,
+  introCardDurationMs = 6000,
 }) {
   const audioOn = shouldPlayBismillahAudio({ bismillahAudioEnabled });
   const textOn = shouldShowBismillahText({ bismillahTextEnabled });

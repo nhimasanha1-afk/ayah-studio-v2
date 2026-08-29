@@ -99,6 +99,13 @@ export interface PreviewVerseTiming {
 export interface PreviewData {
   chapter: { id: number; nameSimple: string; nameArabic: string; translatedName: string };
   audioUrl: string;
+  // Bismillah has no standalone audio file -- it's verse 1 of Al-Fatiha, so
+  // this is that reciter's real Al-Fatiha CDN URL plus the real
+  // forced-alignment boundary (ms) where verse 2 begins. The client plays
+  // this audio from 0 and stops it at bismillahAudioDurationMs, the same
+  // real cut point server/src/lib/bismillahAudio.js uses for the export.
+  bismillahAudioUrl: string;
+  bismillahAudioDurationMs: number | null;
   anyEstimatedTiming: boolean;
   verses: PreviewVerseTiming[];
 }
@@ -221,6 +228,47 @@ export async function getBackgroundVideoGenerationJob(jobId: string): Promise<Ba
     throw new Error(data.error ?? `Failed to fetch job status (${res.status})`);
   }
   return res.json() as Promise<BackgroundVideoGenerationJob>;
+}
+
+export interface CardImageGenerationResult {
+  imageId: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+// Same generic job shape as BackgroundVideoGenerationJob, for Runway's
+// gen4_image text-to-image model instead of text-to-video.
+export interface CardImageGenerationJob {
+  id: string;
+  status: 'queued' | 'running' | 'done' | 'error';
+  stage: 'generating' | 'done' | null;
+  progress: number | null;
+  result: CardImageGenerationResult | null;
+  error: string | null;
+}
+
+export async function generateCardImage(prompt: string, aspectRatio: AspectRatio): Promise<{ jobId: string }> {
+  const res = await fetch('/api/uploads/card-image/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, aspectRatio }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `Failed to start generation (${res.status})`);
+  }
+  const data = (await res.json()) as { jobId: string; status: string };
+  return { jobId: data.jobId };
+}
+
+export async function getCardImageGenerationJob(jobId: string): Promise<CardImageGenerationJob> {
+  const res = await fetch(`/api/uploads/card-image/generate/jobs/${jobId}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `Failed to fetch job status (${res.status})`);
+  }
+  return res.json() as Promise<CardImageGenerationJob>;
 }
 
 export async function startExportJob(request: SurahExportRequest): Promise<{ jobId: string }> {

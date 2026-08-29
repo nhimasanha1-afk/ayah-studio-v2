@@ -35,8 +35,3 @@ export function badgePositionStyle(position: BadgePosition): React.CSSProperties
   }
   return style;
 }
-
-export function introTextTopPct(textPosition: TextPosition): number {
-  const y: Record<TextPosition, number> = { 'upper-third': 70, center: 320, 'lower-third': 560 };
-  return (y[textPosition] / VIDEO_HEIGHT) * 100;
-}

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBackgroundLibrary, usePreviewData } from '../lib/hooks';
-import { badgePositionStyle, introTextTopPct, scrimStyle } from '../lib/previewLayout';
+import { badgePositionStyle, scrimStyle } from '../lib/previewLayout';
 import { FONT_REGISTRY } from '../lib/types';
 import { isRtlScript, scriptForLanguage, TRANSLATION_SCRIPT_FONTS } from '../lib/translationFonts';
 import { toArabicIndicNumerals } from '../lib/arabicNumerals';
+import { computeIntroTimingWindow } from '../lib/introTiming';
+import { resolveCardBackground } from '../lib/cardBackground';
 import { useExportConfigStore } from '../state/exportConfigStore';
 
 /** Mirrors server/src/lib/assBuilder.js's resolveTranslationFontFamily. */
@@ -34,6 +36,8 @@ function AyahNumberBadge({ verseNumber }: { verseNumber: number }) {
   return <span style={{ marginInlineStart: '0.2em' }}>{'﴿' + toArabicIndicNumerals(verseNumber) + '﴾'}</span>;
 }
 
+type Phase = 'intro' | 'verse' | 'outro';
+
 export function PreviewPane() {
   const chapterId = useExportConfigStore((s) => s.chapterId);
   const reciterId = useExportConfigStore((s) => s.reciterId);
@@ -41,15 +45,35 @@ export function PreviewPane() {
   const translationLanguage = useExportConfigStore((s) => s.translationLanguage);
   const style = useExportConfigStore((s) => s.style);
   const intro = useExportConfigStore((s) => s.intro);
+  const outro = useExportConfigStore((s) => s.outro);
   const background = useExportConfigStore((s) => s.background);
   const aspectRatio = useExportConfigStore((s) => s.aspectRatio);
+  const uploadedBackgroundClips = useExportConfigStore((s) => s.uploadedBackgroundClips);
+  const uploadedCardImages = useExportConfigStore((s) => s.uploadedCardImages);
 
   const preview = usePreviewData(chapterId, reciterId, translationId);
   const library = useBackgroundLibrary();
 
   const chapter = preview.data?.chapter;
-  const hasIntroWindow = intro.introCardEnabled || intro.bismillahTextEnabled || intro.bismillahAudioEnabled;
-  const [showIntro, setShowIntro] = useState(false);
+
+  // Real intro-window duration, computed with the exact same rule the
+  // export itself uses (see lib/introTiming.ts) -- concurrent card+audio,
+  // never additive. Falls back to the card-only duration if audio is on but
+  // its real duration hasn't loaded yet.
+  const introWindowMs = useMemo(
+    () =>
+      computeIntroTimingWindow({
+        introCardEnabled: intro.introCardEnabled,
+        bismillahTextEnabled: intro.bismillahTextEnabled,
+        bismillahAudioEnabled: intro.bismillahAudioEnabled,
+        bismillahAudioDurationMs: preview.data?.bismillahAudioDurationMs,
+        introCardDurationMs: intro.introCardDurationMs,
+      }).windowMs,
+    [intro, preview.data?.bismillahAudioDurationMs]
+  );
+  const outroWindowMs = outro.enabled ? outro.durationMs : 0;
+  const introAudioActive =
+    intro.bismillahAudioEnabled && typeof preview.data?.bismillahAudioDurationMs === 'number' && preview.data.bismillahAudioDurationMs > 0;
 
   const firstClipUrl = useMemo(() => {
     if (background.clipIds.length === 0 || !library.data) return null;
@@ -57,50 +81,210 @@ export function PreviewPane() {
     return allClips.find((c) => c.id === background.clipIds[0])?.url ?? null;
   }, [background.clipIds, library.data]);
 
+  const introCardBackground = useMemo(
+    () => resolveCardBackground(intro.cardBackgroundClipId, uploadedCardImages, uploadedBackgroundClips, library.data ?? null),
+    [intro.cardBackgroundClipId, uploadedCardImages, uploadedBackgroundClips, library.data]
+  );
+  const outroCardBackground = useMemo(
+    () => resolveCardBackground(outro.cardBackgroundClipId, uploadedCardImages, uploadedBackgroundClips, library.data ?? null),
+    [outro.cardBackgroundClipId, uploadedCardImages, uploadedBackgroundClips, library.data]
+  );
+
   const translationScript = scriptForLanguage(translationLanguage);
   const translationFontFamily = resolveTranslationFontFamily(style.typography.latinFont, translationScript);
   const [videoFailed, setVideoFailed] = useState(false);
   useEffect(() => setVideoFailed(false), [firstClipUrl]);
 
-  // Real playback state -- this is a genuine <audio> player over the real
-  // recitation audio (a plain <audio src>, not a fetch(), so no CORS
-  // concerns loading it from Quran.com's CDN), not a simulated timeline.
-  const audioRef = useRef<HTMLAudioElement>(null);
+  // Real playback state, spanning a single continuous virtual timeline of
+  // [intro][verse][outro] -- not three separate illustrations. Each phase
+  // is driven by whatever real thing produces its duration: the intro's own
+  // Bismillah audio when it's on, the main recitation audio for the verse
+  // phase, and a plain timer for phases with no real audio (intro without
+  // Bismillah audio, and the outro, which is always silent).
+  const introAudioRef = useRef<HTMLAudioElement>(null);
+  const mainAudioRef = useRef<HTMLAudioElement>(null);
   const bgVideoRef = useRef<HTMLVideoElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentMs, setCurrentMs] = useState(0);
-  const [durationMs, setDurationMs] = useState(0);
+  const rafRef = useRef<number | null>(null);
+  const rafLastTsRef = useRef<number | null>(null);
 
-  // A new chapter/reciter means a new <audio src>, which the browser
-  // implicitly resets -- mirror that in our own state too.
+  const [phase, setPhase] = useState<Phase>(introWindowMs > 0 ? 'intro' : 'verse');
+  const [phaseElapsedMs, setPhaseElapsedMs] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [mainDurationMs, setMainDurationMs] = useState(0);
+
+  function stopTimer() {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    rafLastTsRef.current = null;
+  }
+
+  // A new chapter/reciter means new audio sources -- reset the whole
+  // timeline rather than leaving it mid-phase against stale content.
   useEffect(() => {
+    stopTimer();
     setIsPlaying(false);
-    setCurrentMs(0);
-    setDurationMs(0);
+    setPhase(introWindowMs > 0 ? 'intro' : 'verse');
+    setPhaseElapsedMs(0);
+    setMainDurationMs(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview.data?.audioUrl]);
 
-  // Keep the looping background video's own play state in lockstep with the
-  // real audio, so pausing/playing the recitation pauses/plays the visual
-  // background too, instead of it looping independently forever.
+  // Keep the looping background video's own play state in lockstep with
+  // whichever phase is actually audible/active, so it never loops on its
+  // own independently of real playback.
   useEffect(() => {
     const v = bgVideoRef.current;
     if (!v) return;
-    if (isPlaying) v.play().catch(() => {});
+    if (isPlaying && phase === 'verse') v.play().catch(() => {});
     else v.pause();
-  }, [isPlaying, firstClipUrl]);
+  }, [isPlaying, phase, firstClipUrl]);
 
-  function togglePlay() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) audio.play().catch(() => {});
-    else audio.pause();
+  function advancePhase() {
+    if (phase === 'intro') {
+      stopTimer();
+      if (mainDurationMs > 0) {
+        setPhase('verse');
+        setPhaseElapsedMs(0);
+        if (isPlaying) {
+          const a = mainAudioRef.current;
+          if (a) {
+            a.currentTime = 0;
+            a.play().catch(() => {});
+          }
+        }
+      } else {
+        setIsPlaying(false);
+      }
+    } else if (phase === 'verse') {
+      if (outroWindowMs > 0) {
+        setPhase('outro');
+        setPhaseElapsedMs(0);
+        if (isPlaying) runTimerPhase(outroWindowMs);
+      } else {
+        setIsPlaying(false);
+      }
+    } else {
+      stopTimer();
+      setIsPlaying(false);
+    }
   }
 
-  function handleSeek(ms: number) {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = ms / 1000;
-    setCurrentMs(ms);
+  function runTimerPhase(limitMs: number) {
+    stopTimer();
+    rafLastTsRef.current = null;
+    const tick = (ts: number) => {
+      if (rafLastTsRef.current === null) rafLastTsRef.current = ts;
+      const deltaMs = ts - rafLastTsRef.current;
+      rafLastTsRef.current = ts;
+      setPhaseElapsedMs((prev) => {
+        const next = prev + deltaMs;
+        if (next >= limitMs) {
+          stopTimer();
+          // Deferred so we don't setState-during-setState on the same tick.
+          setTimeout(() => advancePhase(), 0);
+          return limitMs;
+        }
+        return next;
+      });
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  }
+
+  function startPhase() {
+    if (phase === 'intro') {
+      if (introAudioActive) {
+        introAudioRef.current?.play().catch(() => {});
+      } else {
+        runTimerPhase(introWindowMs);
+      }
+    } else if (phase === 'verse') {
+      mainAudioRef.current?.play().catch(() => {});
+    } else {
+      runTimerPhase(outroWindowMs);
+    }
+  }
+
+  function pausePhase() {
+    introAudioRef.current?.pause();
+    mainAudioRef.current?.pause();
+    stopTimer();
+  }
+
+  function togglePlay() {
+    if (isPlaying) {
+      pausePhase();
+      setIsPlaying(false);
+    } else {
+      setIsPlaying(true);
+      startPhase();
+    }
+  }
+
+  // Stop the Bismillah clip at the real cut boundary -- the underlying
+  // audio file is the reciter's whole Al-Fatiha recitation, not a
+  // standalone Bismillah clip (see backendApi.ts's PreviewData comment).
+  function handleIntroAudioTimeUpdate() {
+    const a = introAudioRef.current;
+    const durationMs = preview.data?.bismillahAudioDurationMs;
+    if (!a || typeof durationMs !== 'number') return;
+    const ms = a.currentTime * 1000;
+    if (ms >= durationMs) {
+      a.pause();
+      advancePhase();
+    } else {
+      setPhaseElapsedMs(ms);
+    }
+  }
+
+  const totalMs = introWindowMs + mainDurationMs + outroWindowMs;
+  const virtualMs =
+    (phase === 'intro' ? 0 : phase === 'verse' ? introWindowMs : introWindowMs + mainDurationMs) + phaseElapsedMs;
+
+  function handleSeek(targetVirtualMs: number) {
+    pausePhase();
+    let targetPhase: Phase;
+    let elapsed: number;
+    if (targetVirtualMs < introWindowMs) {
+      targetPhase = 'intro';
+      elapsed = targetVirtualMs;
+    } else if (targetVirtualMs < introWindowMs + mainDurationMs) {
+      targetPhase = 'verse';
+      elapsed = targetVirtualMs - introWindowMs;
+    } else {
+      targetPhase = 'outro';
+      elapsed = Math.min(targetVirtualMs - introWindowMs - mainDurationMs, outroWindowMs);
+    }
+
+    setPhase(targetPhase);
+    setPhaseElapsedMs(elapsed);
+
+    if (targetPhase === 'intro' && introAudioActive && introAudioRef.current) {
+      introAudioRef.current.currentTime = elapsed / 1000;
+    } else if (targetPhase === 'verse' && mainAudioRef.current) {
+      mainAudioRef.current.currentTime = elapsed / 1000;
+    }
+
+    if (isPlaying) {
+      // Deferred so the phase/ref updates above land before we start playback.
+      setTimeout(() => {
+        if (targetPhase === 'intro') {
+          if (introAudioActive) introAudioRef.current?.play().catch(() => {});
+          else runTimerPhase(introWindowMs);
+        } else if (targetPhase === 'verse') {
+          mainAudioRef.current?.play().catch(() => {});
+        } else {
+          runTimerPhase(outroWindowMs);
+        }
+      }, 0);
+    }
+  }
+
+  function jumpToPhase(target: Phase) {
+    const targetMs = target === 'intro' ? 0 : target === 'verse' ? introWindowMs : introWindowMs + mainDurationMs;
+    handleSeek(targetMs);
   }
 
   // The verse whose real [startMs, endMs) window contains the current
@@ -110,19 +294,20 @@ export function PreviewPane() {
   const currentVerse = useMemo(() => {
     const verses = preview.data?.verses;
     if (!verses || verses.length === 0) return null;
-    const match = verses.find((v) => v.startMs != null && v.endMs != null && currentMs >= v.startMs && currentMs < v.endMs);
+    const match = verses.find((v) => v.startMs != null && v.endMs != null && phaseElapsedMs >= v.startMs && phaseElapsedMs < v.endMs);
     if (match) return match;
-    return currentMs <= 0 ? verses[0] : verses[verses.length - 1];
-  }, [preview.data, currentMs]);
+    return phaseElapsedMs <= 0 ? verses[0] : verses[verses.length - 1];
+  }, [preview.data, phaseElapsedMs]);
 
   const currentWordIndex = useMemo(() => {
-    if (!currentVerse) return -1;
+    if (!currentVerse || phase !== 'verse') return -1;
     return currentVerse.words.findIndex(
-      (w) => w.startMs != null && w.endMs != null && currentMs >= w.startMs && currentMs < w.endMs
+      (w) => w.startMs != null && w.endMs != null && phaseElapsedMs >= w.startMs && phaseElapsedMs < w.endMs
     );
-  }, [currentVerse, currentMs]);
+  }, [currentVerse, phaseElapsedMs, phase]);
 
   const isVertical = aspectRatio === '9:16';
+  const activeCardBackground = phase === 'intro' ? introCardBackground : phase === 'outro' ? outroCardBackground : null;
 
   return (
     <div className="space-y-2">
@@ -134,8 +319,28 @@ export function PreviewPane() {
             : { aspectRatio: '16 / 9' }
         }
       >
-        {/* Background */}
-        {firstClipUrl && !videoFailed ? (
+        {/* Background: the active card's own override during intro/outro,
+            otherwise the main rotation's first clip. */}
+        {activeCardBackground ? (
+          activeCardBackground.type === 'image' ? (
+            <img
+              key={activeCardBackground.url}
+              src={activeCardBackground.url}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <video
+              key={activeCardBackground.url}
+              src={activeCardBackground.url}
+              className="absolute inset-0 h-full w-full object-cover"
+              muted
+              autoPlay
+              loop
+              playsInline
+            />
+          )
+        ) : firstClipUrl && !videoFailed ? (
           <video
             key={firstClipUrl}
             ref={bgVideoRef}
@@ -247,19 +452,22 @@ export function PreviewPane() {
             </div>
           ))}
 
-        {/* Caption / intro area */}
-        <div style={scrimStyle(style.colors.textPosition)} className={style.colors.scrim.enabled ? '' : ''}>
-          {style.colors.scrim.enabled && (
-            <div
-              className="absolute inset-0"
-              style={{ background: style.colors.scrim.color, opacity: style.colors.scrim.opacity }}
-            />
-          )}
-          <div className="relative flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-            {showIntro ? (
-              <>
-                {intro.bismillahTextEnabled && (
+        {/* Caption / intro / outro area */}
+        {phase === 'verse' && (
+          <div style={scrimStyle(style.colors.textPosition)}>
+            {style.colors.scrim.enabled && (
+              <div
+                className="absolute inset-0"
+                style={{ background: style.colors.scrim.color, opacity: style.colors.scrim.opacity }}
+              />
+            )}
+            <div className="relative flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+              {preview.loading && <p className="text-xs text-neutral-500">Loading preview…</p>}
+              {preview.error && <p className="text-xs text-red-400">Failed to load preview: {preview.error}</p>}
+              {currentVerse && (
+                <>
                   <p
+                    dir="rtl"
                     style={{
                       fontFamily: FONT_REGISTRY.arabic[style.typography.arabicFont].family,
                       fontSize: Math.round(style.typography.arabicFontSize * 0.6),
@@ -267,81 +475,82 @@ export function PreviewPane() {
                       WebkitTextStroke: `${style.colors.outlineWidth * 0.5}px ${style.colors.outlineColor}`,
                     }}
                   >
-                    بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
+                    {currentVerse.words.map((word, i) => (
+                      <span
+                        key={i}
+                        style={
+                          style.colors.wordHighlightEnabled && i === currentWordIndex
+                            ? { color: style.colors.highlightColor, WebkitTextStroke: 0 }
+                            : undefined
+                        }
+                      >
+                        {word.text}
+                        {i < currentVerse.words.length - 1 ? ' ' : ''}
+                      </span>
+                    ))}
+                    {style.colors.showArabicAyahNumbers && <AyahNumberBadge verseNumber={currentVerse.verseNumber} />}
                   </p>
-                )}
-                {!intro.bismillahTextEnabled && !intro.introCardEnabled && (
-                  <p className="text-xs text-neutral-500">Bismillah audio only (no text shown) — silent in preview</p>
-                )}
-              </>
-            ) : (
-              <>
-                {preview.loading && <p className="text-xs text-neutral-500">Loading preview…</p>}
-                {preview.error && <p className="text-xs text-red-400">Failed to load preview: {preview.error}</p>}
-                {currentVerse && (
-                  <>
-                    <p
-                      dir="rtl"
-                      style={{
-                        fontFamily: FONT_REGISTRY.arabic[style.typography.arabicFont].family,
-                        fontSize: Math.round(style.typography.arabicFontSize * 0.6),
-                        color: style.colors.arabicTextColor,
-                        WebkitTextStroke: `${style.colors.outlineWidth * 0.5}px ${style.colors.outlineColor}`,
-                      }}
-                    >
-                      {currentVerse.words.map((word, i) => (
-                        <span
-                          key={i}
-                          style={
-                            style.colors.wordHighlightEnabled && i === currentWordIndex
-                              ? { color: style.colors.highlightColor, WebkitTextStroke: 0 }
-                              : undefined
-                          }
-                        >
-                          {word.text}
-                          {i < currentVerse.words.length - 1 ? ' ' : ''}
-                        </span>
-                      ))}
-                      {style.colors.showArabicAyahNumbers && <AyahNumberBadge verseNumber={currentVerse.verseNumber} />}
-                    </p>
-                    <p
-                      dir={isRtlScript(translationScript) ? 'rtl' : undefined}
-                      style={{
-                        fontFamily: translationFontFamily,
-                        fontSize: Math.round(style.typography.translationFontSize * 0.6),
-                        color: style.colors.translationTextColor,
-                      }}
-                    >
-                      {style.colors.showAyahNumbers && `(${currentVerse.verseNumber}) `}
-                      {currentVerse.translationText}
-                    </p>
-                  </>
-                )}
-              </>
-            )}
+                  <p
+                    dir={isRtlScript(translationScript) ? 'rtl' : undefined}
+                    style={{
+                      fontFamily: translationFontFamily,
+                      fontSize: Math.round(style.typography.translationFontSize * 0.6),
+                      color: style.colors.translationTextColor,
+                    }}
+                  >
+                    {style.colors.showAyahNumbers && `(${currentVerse.verseNumber}) `}
+                    {currentVerse.translationText}
+                  </p>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {hasIntroWindow && intro.introCardEnabled && (
-          <div
-            className="absolute left-1/2 -translate-x-1/2 rounded bg-black/60 px-4 py-2 text-center text-white"
-            style={{ top: `${introTextTopPct(style.colors.textPosition) - 24}%`, fontFamily: 'Inter', fontSize: 13, display: showIntro ? 'block' : 'none' }}
-          >
-            {chapter && (
-              <>
+        {phase === 'intro' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center">
+            {intro.bismillahTextEnabled && (
+              <p
+                style={{
+                  fontFamily: FONT_REGISTRY.arabic[style.typography.arabicFont].family,
+                  fontSize: Math.round(style.typography.arabicFontSize * 0.6),
+                  color: style.colors.arabicTextColor,
+                  WebkitTextStroke: `${style.colors.outlineWidth * 0.5}px ${style.colors.outlineColor}`,
+                }}
+              >
+                بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
+              </p>
+            )}
+            {intro.introCardEnabled && chapter && (
+              <div
+                className="rounded bg-black/60 px-4 py-2 text-center text-white"
+                style={{ fontFamily: 'Inter', fontSize: 13 }}
+              >
                 <div>{chapter.nameSimple}</div>
                 <div className="opacity-80">{chapter.translatedName} • {chapter.id}</div>
-              </>
+              </div>
             )}
+            {!intro.bismillahTextEnabled && !intro.introCardEnabled && (
+              <p className="text-xs text-neutral-400">Bismillah audio only (no text shown)</p>
+            )}
+          </div>
+        )}
+
+        {phase === 'outro' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/55 px-6 text-center">
+            <div style={{ fontFamily: 'Inter', fontSize: 15, color: 'white' }}>
+              <div>{outro.line1}</div>
+              {outro.line2 && <div className="mt-1 opacity-80">{outro.line2}</div>}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Real playback controls over the real recitation audio -- hidden
-          while looking at the (static, non-timed) intro/Bismillah view
-          above, since that's an illustration of a screen rather than a
-          moment on this timeline. */}
-      {!showIntro && preview.data && (
+      {/* Real playback controls over one continuous virtual timeline
+          (intro -> verse -> outro), each phase backed by whatever real
+          thing produces its duration -- Bismillah audio, the main
+          recitation audio, or a plain timer for silent phases. */}
+      {preview.data && (
         <div className="flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/50 px-3 py-2">
           <button
             type="button"
@@ -351,58 +560,78 @@ export function PreviewPane() {
           >
             {isPlaying ? '⏸' : '▶'}
           </button>
-          <span className="w-9 shrink-0 text-right text-xs tabular-nums text-neutral-400">{formatTime(currentMs)}</span>
+          <span className="w-9 shrink-0 text-right text-xs tabular-nums text-neutral-400">{formatTime(virtualMs)}</span>
           <input
             type="range"
             min={0}
-            max={Math.max(durationMs, 1)}
+            max={Math.max(totalMs, 1)}
             step={100}
-            value={Math.min(currentMs, durationMs || 0)}
+            value={Math.min(virtualMs, totalMs || 0)}
             onChange={(e) => handleSeek(Number(e.target.value))}
             className="flex-1 accent-emerald-500"
           />
-          <span className="w-9 shrink-0 text-xs tabular-nums text-neutral-400">{formatTime(durationMs)}</span>
+          <span className="w-9 shrink-0 text-xs tabular-nums text-neutral-400">{formatTime(totalMs)}</span>
         </div>
       )}
 
       {preview.data && (
-        <audio
-          ref={audioRef}
-          src={preview.data.audioUrl}
-          preload="metadata"
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onEnded={() => setIsPlaying(false)}
-          onTimeUpdate={(e) => setCurrentMs(e.currentTarget.currentTime * 1000)}
-          onLoadedMetadata={(e) => setDurationMs(e.currentTarget.duration * 1000)}
-          className="hidden"
-        />
+        <>
+          <audio
+            ref={mainAudioRef}
+            src={preview.data.audioUrl}
+            preload="metadata"
+            onTimeUpdate={(e) => {
+              if (phase === 'verse') setPhaseElapsedMs(e.currentTarget.currentTime * 1000);
+            }}
+            onLoadedMetadata={(e) => setMainDurationMs(e.currentTarget.duration * 1000)}
+            onEnded={() => phase === 'verse' && advancePhase()}
+            className="hidden"
+          />
+          {introAudioActive && (
+            <audio
+              ref={introAudioRef}
+              src={preview.data.bismillahAudioUrl}
+              preload="metadata"
+              onTimeUpdate={handleIntroAudioTimeUpdate}
+              className="hidden"
+            />
+          )}
+        </>
       )}
 
       <div className="flex items-center justify-between text-xs text-neutral-500">
         <span>
           {preview.data?.anyEstimatedTiming
             ? 'Some verse timing is estimated (real per-word data wasn\'t available for every verse).'
-            : 'Real word-synced recitation audio -- background crossfades, the intro/Bismillah window, and outro are export-only and not shown here.'}
+            : 'Real word-synced recitation audio, including the real intro/Bismillah and outro windows -- background crossfades for the main rotation are export-only and not shown here.'}
         </span>
-        {hasIntroWindow && (
-          <div className="flex gap-1">
+        <div className="flex gap-1">
+          {introWindowMs > 0 && (
             <button
               type="button"
-              onClick={() => setShowIntro(true)}
-              className={`rounded px-2 py-1 ${showIntro ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}
+              onClick={() => jumpToPhase('intro')}
+              className={`rounded px-2 py-1 ${phase === 'intro' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}
             >
               Intro
             </button>
+          )}
+          <button
+            type="button"
+            onClick={() => jumpToPhase('verse')}
+            className={`rounded px-2 py-1 ${phase === 'verse' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}
+          >
+            Verse
+          </button>
+          {outroWindowMs > 0 && (
             <button
               type="button"
-              onClick={() => setShowIntro(false)}
-              className={`rounded px-2 py-1 ${!showIntro ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}
+              onClick={() => jumpToPhase('outro')}
+              className={`rounded px-2 py-1 ${phase === 'outro' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-neutral-300'}`}
             >
-              Verse
+              Outro
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
