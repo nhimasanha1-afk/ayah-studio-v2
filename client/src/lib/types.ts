@@ -67,6 +67,7 @@ export interface StyleConfig {
     backgroundBlur: number;
     backgroundZoomPan: ZoomPanStyle;
     showAyahNumbers: boolean;
+    showArabicAyahNumbers: boolean;
   };
   badges: {
     watermark: { enabled: boolean; text: string; opacity: number; color: string; position: BadgePosition; fontSize: number };
@@ -98,6 +99,7 @@ export const DEFAULT_STYLE: StyleConfig = {
     backgroundBlur: 0,
     backgroundZoomPan: 'none',
     showAyahNumbers: false,
+    showArabicAyahNumbers: false,
   },
   badges: {
     watermark: { enabled: false, text: '', opacity: 0.6, color: '#FFFFFF', position: 'bottom-center', fontSize: 22 },

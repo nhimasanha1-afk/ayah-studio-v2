@@ -60,7 +60,12 @@ export function ColorsTab() {
       </SelectField>
 
       <CheckboxField
-        label="Show ayah numbers"
+        label="Show ayah numbers (Arabic)"
+        checked={colors.showArabicAyahNumbers}
+        onChange={(v) => setColors({ showArabicAyahNumbers: v })}
+      />
+      <CheckboxField
+        label="Show ayah numbers (translation)"
         checked={colors.showAyahNumbers}
         onChange={(v) => setColors({ showAyahNumbers: v })}
       />

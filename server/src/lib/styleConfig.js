@@ -68,6 +68,7 @@ export const DEFAULT_STYLE = {
     backgroundBlur: 0,
     backgroundZoomPan: 'none',
     showAyahNumbers: false,
+    showArabicAyahNumbers: false,
   },
   badges: {
     watermark: { enabled: false, text: '', opacity: 0.6, color: '#FFFFFF', position: 'bottom-center', fontSize: 22 },

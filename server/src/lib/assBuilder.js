@@ -127,7 +127,7 @@ export function buildAssSubtitles(
     // bundled Arabic fonts (Noto Naskh Arabic, Amiri) already include these
     // glyphs as ordinary characters -- no font override or ligature is
     // needed the way the old nested-circle marker required.
-    const markerSegment = style.colors.showAyahNumbers
+    const markerSegment = style.colors.showArabicAyahNumbers
       ? `{\\c${arabicColor}&\\shad${shadowDepth}}﴿${toArabicIndicNumerals(verse.verseNumber)}﴾{\\r}`
       : null;
     const translationNumberPrefix = style.colors.showAyahNumbers ? `(${verse.verseNumber}) ` : '';

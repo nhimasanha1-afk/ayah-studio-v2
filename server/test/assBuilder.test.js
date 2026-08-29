@@ -91,7 +91,7 @@ test('an unrecognized translationLanguage falls back to the latin font bucket ra
   assert.match(styleLine(ass), /^Style: Translation,Inter,/);
 });
 
-test('showAyahNumbers off (default): no verse number appears on either line', () => {
+test('showAyahNumbers/showArabicAyahNumbers off (default): no verse number appears on either line', () => {
   const style = resolveStyle();
   const ass = buildAssSubtitles(captionData, style, layout);
   const [arabicLine] = dialogueLines(ass, 'Arabic');
@@ -100,8 +100,20 @@ test('showAyahNumbers off (default): no verse number appears on either line', ()
   assert.ok(!translationLine.includes('(3)'));
 });
 
-test('showAyahNumbers on: Arabic line gets the Arabic-Indic numeral appended after the word, Translation line gets "(N) " prefixed', () => {
-  const style = resolveStyle({ colors: { showAyahNumbers: true } });
+test('showArabicAyahNumbers controls only the Arabic marker; showAyahNumbers controls only the translation prefix, independently', () => {
+  const arabicOnly = resolveStyle({ colors: { showArabicAyahNumbers: true, showAyahNumbers: false } });
+  const arabicOnlyAss = buildAssSubtitles(captionData, arabicOnly, layout);
+  assert.ok(dialogueLines(arabicOnlyAss, 'Arabic')[0].includes('﴿٣﴾'));
+  assert.ok(!dialogueLines(arabicOnlyAss, 'Translation')[0].includes('(3)'));
+
+  const translationOnly = resolveStyle({ colors: { showArabicAyahNumbers: false, showAyahNumbers: true } });
+  const translationOnlyAss = buildAssSubtitles(captionData, translationOnly, layout);
+  assert.ok(!dialogueLines(translationOnlyAss, 'Arabic')[0].includes('﴿٣﴾'));
+  assert.ok(dialogueLines(translationOnlyAss, 'Translation')[0].includes('(3)'));
+});
+
+test('both on: Arabic line gets the Arabic-Indic numeral appended after the word, Translation line gets "(N) " prefixed', () => {
+  const style = resolveStyle({ colors: { showAyahNumbers: true, showArabicAyahNumbers: true } });
   const ass = buildAssSubtitles(captionData, style, layout);
   const [arabicLine] = dialogueLines(ass, 'Arabic');
   const [translationLine] = dialogueLines(ass, 'Translation');
@@ -125,7 +137,9 @@ test('showAyahNumbers on: Arabic line gets the Arabic-Indic numeral appended aft
 });
 
 test('the Arabic ayah number always renders in the normal (non-highlighted) color, even on the single-word verse where that word is the active/highlighted one', () => {
-  const style = resolveStyle({ colors: { showAyahNumbers: true, highlightColor: '#FFD700', arabicTextColor: '#FFFFFF' } });
+  const style = resolveStyle({
+    colors: { showArabicAyahNumbers: true, highlightColor: '#FFD700', arabicTextColor: '#FFFFFF' },
+  });
   const ass = buildAssSubtitles(captionData, style, layout);
   const [arabicLine] = dialogueLines(ass, 'Arabic');
   const arabicText = arabicLine.split(',').slice(9).join(',');
@@ -174,7 +188,7 @@ const multiWordCaptionData = {
 };
 
 test('highlighting a middle word: the file order is [marker, words-after, highlighted word, words-before] so libass\'s literal left-to-right run placement reads correctly right-to-left', () => {
-  const style = resolveStyle({ colors: { wordHighlightEnabled: true, showAyahNumbers: true } });
+  const style = resolveStyle({ colors: { wordHighlightEnabled: true, showArabicAyahNumbers: true } });
   const ass = buildAssSubtitles(multiWordCaptionData, style, layout);
   const arabicLines = dialogueLines(ass, 'Arabic');
   // The 3rd word ("سوم", index 2) is the active/highlighted one in its dialogue line.

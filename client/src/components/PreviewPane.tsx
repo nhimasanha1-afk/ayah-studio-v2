@@ -302,7 +302,7 @@ export function PreviewPane() {
                           {i < currentVerse.words.length - 1 ? ' ' : ''}
                         </span>
                       ))}
-                      {style.colors.showAyahNumbers && <AyahNumberBadge verseNumber={currentVerse.verseNumber} />}
+                      {style.colors.showArabicAyahNumbers && <AyahNumberBadge verseNumber={currentVerse.verseNumber} />}
                     </p>
                     <p
                       dir={isRtlScript(translationScript) ? 'rtl' : undefined}
