@@ -6,6 +6,7 @@ import { isRtlScript, scriptForLanguage, TRANSLATION_SCRIPT_FONTS } from '../lib
 import { toArabicIndicNumerals } from '../lib/arabicNumerals';
 import { computeIntroTimingWindow } from '../lib/introTiming';
 import { resolveCardBackground } from '../lib/cardBackground';
+import { activeClipIndexAt, resolvePlaybackOrder } from '../lib/backgroundRotation';
 import { useExportConfigStore } from '../state/exportConfigStore';
 
 /** Mirrors server/src/lib/assBuilder.js's resolveTranslationFontFamily. */
@@ -75,11 +76,16 @@ export function PreviewPane() {
   const introAudioActive =
     intro.bismillahAudioEnabled && typeof preview.data?.bismillahAudioDurationMs === 'number' && preview.data.bismillahAudioDurationMs > 0;
 
-  const firstClipUrl = useMemo(() => {
-    if (background.clipIds.length === 0 || !library.data) return null;
-    const allClips = Object.values(library.data).flat();
-    return allClips.find((c) => c.id === background.clipIds[0])?.url ?? null;
-  }, [background.clipIds, library.data]);
+  // Sequential keeps the configured order; shuffle is a one-time permutation
+  // recomputed only when the pool or order actually changes, not every
+  // render -- mirrors resolvePlaybackOrder's real, non-crossfaded rotation
+  // (see lib/backgroundRotation.ts for why a preview clip change is a hard
+  // cut rather than the real ffmpeg xfade blend).
+  const orderedClipIds = useMemo(
+    () => (background.clipIds.length > 0 ? resolvePlaybackOrder(background.clipIds, background.order) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [background.clipIds, background.order]
+  );
 
   const introCardBackground = useMemo(
     () => resolveCardBackground(intro.cardBackgroundClipId, uploadedCardImages, uploadedBackgroundClips, library.data ?? null),
@@ -93,7 +99,6 @@ export function PreviewPane() {
   const translationScript = scriptForLanguage(translationLanguage);
   const translationFontFamily = resolveTranslationFontFamily(style.typography.latinFont, translationScript);
   const [videoFailed, setVideoFailed] = useState(false);
-  useEffect(() => setVideoFailed(false), [firstClipUrl]);
 
   // Real playback state, spanning a single continuous virtual timeline of
   // [intro][verse][outro] -- not three separate illustrations. Each phase
@@ -111,6 +116,26 @@ export function PreviewPane() {
   const [phaseElapsedMs, setPhaseElapsedMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mainDurationMs, setMainDurationMs] = useState(0);
+
+  const totalMs = introWindowMs + mainDurationMs + outroWindowMs;
+  const virtualMs =
+    (phase === 'intro' ? 0 : phase === 'verse' ? introWindowMs : introWindowMs + mainDurationMs) + phaseElapsedMs;
+
+  // The main rotation clip active at the current point on the whole
+  // timeline -- real time-based rotation (see lib/backgroundRotation.ts),
+  // not just a fixed first clip. Only relevant as a fallback: intro/outro
+  // phases with their own card background override this entirely (see
+  // activeCardBackground below).
+  const activeMainClipId =
+    orderedClipIds.length > 0
+      ? orderedClipIds[activeClipIndexAt(virtualMs / 1000, background.slotDurationSeconds, background.transitionDurationSeconds) % orderedClipIds.length]
+      : null;
+  const activeMainBackground = useMemo(
+    () => resolveCardBackground(activeMainClipId, uploadedCardImages, uploadedBackgroundClips, library.data ?? null),
+    [activeMainClipId, uploadedCardImages, uploadedBackgroundClips, library.data]
+  );
+  const activeMainBackgroundUrl = activeMainBackground?.url ?? null;
+  useEffect(() => setVideoFailed(false), [activeMainBackgroundUrl]);
 
   function stopTimer() {
     if (rafRef.current !== null) {
@@ -131,15 +156,16 @@ export function PreviewPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview.data?.audioUrl]);
 
-  // Keep the looping background video's own play state in lockstep with
-  // whichever phase is actually audible/active, so it never loops on its
-  // own independently of real playback.
+  // Keep the main rotation's background video playing whenever real
+  // playback is running -- it's the base layer for the whole timeline on
+  // export (intro/outro only override it when their own card background is
+  // set), not just the verse phase.
   useEffect(() => {
     const v = bgVideoRef.current;
     if (!v) return;
-    if (isPlaying && phase === 'verse') v.play().catch(() => {});
+    if (isPlaying) v.play().catch(() => {});
     else v.pause();
-  }, [isPlaying, phase, firstClipUrl]);
+  }, [isPlaying, activeMainBackgroundUrl]);
 
   function advancePhase() {
     if (phase === 'intro') {
@@ -239,10 +265,6 @@ export function PreviewPane() {
     }
   }
 
-  const totalMs = introWindowMs + mainDurationMs + outroWindowMs;
-  const virtualMs =
-    (phase === 'intro' ? 0 : phase === 'verse' ? introWindowMs : introWindowMs + mainDurationMs) + phaseElapsedMs;
-
   function handleSeek(targetVirtualMs: number) {
     pausePhase();
     let targetPhase: Phase;
@@ -320,7 +342,9 @@ export function PreviewPane() {
         }
       >
         {/* Background: the active card's own override during intro/outro,
-            otherwise the main rotation's first clip. */}
+            otherwise the main rotation's currently-active clip (real
+            time-based rotation, a hard cut between clips -- the crossfade
+            blend itself is export-only, a real ffmpeg xfade filter). */}
         {activeCardBackground ? (
           activeCardBackground.type === 'image' ? (
             <img
@@ -340,12 +364,12 @@ export function PreviewPane() {
               playsInline
             />
           )
-        ) : firstClipUrl && !videoFailed ? (
+        ) : activeMainBackgroundUrl && !videoFailed ? (
           <video
-            key={firstClipUrl}
+            key={activeMainBackgroundUrl}
             ref={bgVideoRef}
             className="absolute inset-0 h-full w-full object-cover"
-            src={firstClipUrl}
+            src={activeMainBackgroundUrl}
             muted
             loop
             playsInline
