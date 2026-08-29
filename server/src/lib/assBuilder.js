@@ -127,26 +127,43 @@ export function buildAssSubtitles(
     // bundled Arabic fonts (Noto Naskh Arabic, Amiri) already include these
     // glyphs as ordinary characters -- no font override or ligature is
     // needed the way the old nested-circle marker required.
-    const arabicNumberSuffix = style.colors.showAyahNumbers
-      ? ` {\\c${arabicColor}&\\shad${shadowDepth}}﴿${toArabicIndicNumerals(verse.verseNumber)}﴾{\\r}`
-      : '';
+    const markerSegment = style.colors.showAyahNumbers
+      ? `{\\c${arabicColor}&\\shad${shadowDepth}}﴿${toArabicIndicNumerals(verse.verseNumber)}﴾{\\r}`
+      : null;
     const translationNumberPrefix = style.colors.showAyahNumbers ? `(${verse.verseNumber}) ` : '';
 
     for (let i = 0; i < verse.words.length; i++) {
       const word = verse.words[i];
       if (word.startMs == null || word.endMs == null) continue;
 
-      const rendered = style.colors.wordHighlightEnabled
-        ? words
-            .map((text, j) =>
-              j === i
-                ? `{\\c${highlightColor}&\\shad0}${text}{\\c${arabicColor}&\\shad${shadowDepth}}`
-                : text
-            )
-            .join(' ')
-        : words.join(' ');
+      // libass places each {\...}-override-delimited run at its literal
+      // file-order position -- confirmed by direct pixel-order testing --
+      // rather than bidi-reordering runs as a whole for RTL. An unbroken
+      // plain-text run (no override tags anywhere in it) still shapes and
+      // orders correctly on its own, so the bug only appears once we
+      // introduce a run boundary (wrapping the active word, or appending
+      // the marker, in its own {\c...} block): each such wrap splits the
+      // line into multiple runs that libass then places left-to-right in
+      // file order instead of RTL order. The fix is to build the runs in
+      // their correct reading order (exactly as before) and then reverse
+      // that array before joining, so file order becomes correct visual
+      // (right-to-left) order. When there's only one run (no highlight
+      // and no marker), reversing a 1-element array is a no-op.
+      const segments = [];
+      if (style.colors.wordHighlightEnabled) {
+        const preWords = words.slice(0, i);
+        const postWords = words.slice(i + 1);
+        if (preWords.length) segments.push(preWords.join(' '));
+        segments.push(`{\\c${highlightColor}&\\shad0}${words[i]}{\\c${arabicColor}&\\shad${shadowDepth}}`);
+        if (postWords.length) segments.push(postWords.join(' '));
+      } else {
+        segments.push(words.join(' '));
+      }
+      if (markerSegment) segments.push(markerSegment);
 
-      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, fadeTag + rendered + arabicNumberSuffix));
+      const rendered = segments.length > 1 ? segments.slice().reverse().join(' ') : segments[0];
+
+      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, fadeTag + rendered));
     }
 
     lines.push(

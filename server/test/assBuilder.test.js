@@ -106,11 +106,16 @@ test('showAyahNumbers on: Arabic line gets the Arabic-Indic numeral appended aft
   const [arabicLine] = dialogueLines(ass, 'Arabic');
   const [translationLine] = dialogueLines(ass, 'Translation');
 
-  // Arabic: number, wrapped in ornate Quranic parentheses (﴿٣﴾), comes
-  // after the word text, mirroring how the sentence naturally ends on
-  // screen-left for RTL text.
+  // Arabic: the number, wrapped in ornate Quranic parentheses (﴿٣﴾), reads
+  // as coming after the word -- but libass places {\...}-override-delimited
+  // runs at their literal file-order position rather than bidi-reordering
+  // them for RTL (verified directly by rendering test frames), so to make
+  // the marker land on-screen where it belongs (after the word, i.e. to
+  // its screen-left) it must be written FIRST in the file, ahead of the
+  // (itself override-wrapped, since word highlighting is on by default)
+  // word run.
   const arabicText = arabicLine.split(',').slice(9).join(',');
-  assert.match(arabicText, /قُلْ.*\{\\c&H[0-9A-F]+&\\shad\d+\}﴿٣﴾\{\\r\}$/);
+  assert.match(arabicText, /^\{\\c&H[0-9A-F]+&\\shad\d+\}﴿٣﴾\{\\r\} \{\\c&H[0-9A-F]+&\\shad0\}قُلْ/);
 
   // Translation: number is a prefix at the very start of the line, per an
   // explicit user choice to keep both numbers on the left even though
@@ -124,9 +129,10 @@ test('the Arabic ayah number always renders in the normal (non-highlighted) colo
   const ass = buildAssSubtitles(captionData, style, layout);
   const [arabicLine] = dialogueLines(ass, 'Arabic');
   const arabicText = arabicLine.split(',').slice(9).join(',');
-  // The override block immediately before the numeral must reset to the
+  // The override block wrapping the numeral (now written first in the
+  // file -- see the run-order comment in assBuilder.js) must use the
   // normal arabic color, not leave the highlight color active.
-  assert.match(arabicText, /\{\\c&H00FFFFFF&\\shad\d+\}﴿٣﴾\{\\r\}$/);
+  assert.match(arabicText, /^\{\\c&H00FFFFFF&\\shad\d+\}﴿٣﴾\{\\r\}/);
 });
 
 test('wordHighlightEnabled: false -> no per-word color override anywhere on the Arabic line', () => {
@@ -137,4 +143,45 @@ test('wordHighlightEnabled: false -> no per-word color override anywhere on the 
     const arabicText = line.split(',').slice(9).join(',');
     assert.ok(!arabicText.includes('{\\c'), `expected no color override, got: ${arabicText}`);
   }
+});
+
+// Regression test for a real reported bug: on a downloaded export, words
+// appeared out of order/direction whenever both word-highlighting and the
+// ayah-number marker were active together. Root cause (confirmed by
+// rendering actual test frames and reading back pixel positions): libass
+// places each {\...}-override-delimited run at its literal file-order
+// position instead of bidi-reordering runs as a whole for RTL. With a
+// multi-word verse, highlighting a MIDDLE word splits the line into three
+// runs (words-before, the highlighted word, words-after) plus a fourth run
+// for the marker -- all four must appear in the file in exactly reversed
+// reading order for the on-screen result to read correctly right-to-left.
+const multiWordCaptionData = {
+  verses: [
+    {
+      startMs: 0,
+      endMs: 500,
+      verseNumber: 1,
+      translationText: 'test',
+      words: [
+        { text: 'اول', startMs: 0, endMs: 100 },
+        { text: 'دوم', startMs: 100, endMs: 200 },
+        { text: 'سوم', startMs: 200, endMs: 300 },
+        { text: 'چهارم', startMs: 300, endMs: 400 },
+        { text: 'پنجم', startMs: 400, endMs: 500 },
+      ],
+    },
+  ],
+};
+
+test('highlighting a middle word: the file order is [marker, words-after, highlighted word, words-before] so libass\'s literal left-to-right run placement reads correctly right-to-left', () => {
+  const style = resolveStyle({ colors: { wordHighlightEnabled: true, showAyahNumbers: true } });
+  const ass = buildAssSubtitles(multiWordCaptionData, style, layout);
+  const arabicLines = dialogueLines(ass, 'Arabic');
+  // The 3rd word ("سوم", index 2) is the active/highlighted one in its dialogue line.
+  const line = arabicLines[2];
+  const text = line.split(',').slice(9).join(',');
+  assert.match(
+    text,
+    /^\{\\c&H[0-9A-F]+&\\shad\d+\}﴿١﴾\{\\r\} چهارم پنجم \{\\c&H[0-9A-F]+&\\shad0\}سوم\{\\c&H[0-9A-F]+&\\shad\d+\} اول دوم$/
+  );
 });
