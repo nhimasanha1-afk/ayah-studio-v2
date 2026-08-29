@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { TRANSITION_STYLES } from '../lib/types';
 import { useBackgroundLibrary } from '../lib/hooks';
 import { useExportConfigStore } from '../state/exportConfigStore';
@@ -15,6 +16,10 @@ export function BackgroundPanel() {
   const setBackgroundTiming = useExportConfigStore((s) => s.setBackgroundTiming);
   const toggleClipInPool = useExportConfigStore((s) => s.toggleClipInPool);
   const moveClipInPool = useExportConfigStore((s) => s.moveClipInPool);
+  const reorderClipInPool = useExportConfigStore((s) => s.reorderClipInPool);
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const clipTitleById = new Map([
     ...Object.values(library.data ?? {})
@@ -30,10 +35,37 @@ export function BackgroundPanel() {
 
       {background.clipIds.length > 0 && (
         <div className="space-y-1.5">
-          <span className="text-xs font-medium text-neutral-400">Rotation pool (in order)</span>
+          <span className="text-xs font-medium text-neutral-400">
+            Rotation pool (drag to reorder{background.order === 'shuffle' ? ' -- shuffled at export, order here is ignored' : ''})
+          </span>
           <ul className="space-y-1">
             {background.clipIds.map((clipId, i) => (
-              <li key={`${clipId}-${i}`} className="flex items-center gap-1.5 rounded-md bg-neutral-800/70 px-2 py-1 text-xs">
+              <li
+                key={`${clipId}-${i}`}
+                draggable
+                onDragStart={(e) => {
+                  setDragIndex(i);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dragIndex !== null && dragIndex !== i) setDragOverIndex(i);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragIndex !== null && dragIndex !== i) reorderClipInPool(dragIndex, i);
+                  setDragIndex(null);
+                  setDragOverIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDragIndex(null);
+                  setDragOverIndex(null);
+                }}
+                className={`flex items-center gap-1.5 rounded-md bg-neutral-800/70 px-2 py-1 text-xs cursor-grab active:cursor-grabbing ${
+                  dragIndex === i ? 'opacity-40' : ''
+                } ${dragOverIndex === i ? 'ring-1 ring-emerald-500' : ''}`}
+              >
+                <span className="text-neutral-500" aria-hidden="true">⠿</span>
                 <span className="flex-1 truncate">{clipTitleById.get(clipId) ?? clipId}</span>
                 <button
                   type="button"

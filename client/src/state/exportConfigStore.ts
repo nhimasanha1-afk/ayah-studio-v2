@@ -55,6 +55,7 @@ interface ExportConfigState {
   ) => void;
   toggleClipInPool: (clipId: string) => void;
   moveClipInPool: (clipId: string, direction: 'up' | 'down') => void;
+  reorderClipInPool: (fromIndex: number, toIndex: number) => void;
   addUploadedBackgroundClip: (clip: UploadedBackgroundClip) => void;
   addUploadedCardImage: (image: UploadedCardImage) => void;
 
@@ -122,6 +123,23 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
       if (targetIndex < 0 || targetIndex >= clipIds.length) return s;
       [clipIds[index], clipIds[targetIndex]] = [clipIds[targetIndex], clipIds[index]];
+      return { background: { ...s.background, clipIds } };
+    }),
+
+  reorderClipInPool: (fromIndex, toIndex) =>
+    set((s) => {
+      const clipIds = [...s.background.clipIds];
+      if (
+        fromIndex < 0 ||
+        fromIndex >= clipIds.length ||
+        toIndex < 0 ||
+        toIndex >= clipIds.length ||
+        fromIndex === toIndex
+      ) {
+        return s;
+      }
+      const [moved] = clipIds.splice(fromIndex, 1);
+      clipIds.splice(toIndex, 0, moved);
       return { background: { ...s.background, clipIds } };
     }),
 
