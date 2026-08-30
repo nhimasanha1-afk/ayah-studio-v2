@@ -554,9 +554,6 @@ export function PreviewPane() {
                 <div className="opacity-80">{chapter.translatedName} • {chapter.id}</div>
               </div>
             )}
-            {!intro.bismillahTextEnabled && !intro.introCardEnabled && (
-              <p className="text-xs text-neutral-400">Bismillah audio only (no text shown)</p>
-            )}
           </div>
         )}
 
