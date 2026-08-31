@@ -382,8 +382,8 @@ export function PreviewPane() {
           />
         )}
 
-        {/* Surah badge (hidden once the outro card takes over, mirrors videoComposition.js's hideBeforeOutro) */}
-        {style.badges.surahBadge.enabled && chapter && phase !== 'outro' && (
+        {/* Surah badge (hidden during the intro/outro cards, mirrors videoComposition.js's badgeVisibilityGate) */}
+        {style.badges.surahBadge.enabled && chapter && phase === 'verse' && (
           <div
             style={{ ...badgePositionStyle(style.badges.surahBadge.position), fontFamily: 'Inter' }}
             className={`text-white ${style.badges.surahBadge.variant === 'stacked-title-card' ? 'bg-black/60 rounded px-3 py-2 text-center' : ''}`}
@@ -442,9 +442,9 @@ export function PreviewPane() {
           </div>
         )}
 
-        {/* Channel logo: real uploaded image if present, else the placeholder monogram (hidden once the outro card takes over) */}
+        {/* Channel logo: real uploaded image if present, else the placeholder monogram (hidden during the intro/outro cards) */}
         {style.badges.channelLogo.enabled &&
-          phase !== 'outro' &&
+          phase === 'verse' &&
           (style.badges.channelLogo.logoId ? (
             <img
               src={`/uploads/logos/${style.badges.channelLogo.logoId}`}
@@ -533,7 +533,10 @@ export function PreviewPane() {
         )}
 
         {phase === 'intro' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center">
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center"
+            style={{ background: `rgba(0, 0, 0, ${intro.overlayOpacity})` }}
+          >
             {intro.bismillahTextEnabled && (
               <p
                 style={{

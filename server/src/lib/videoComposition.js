@@ -104,6 +104,19 @@ export function buildFilterComplex({
       current = overlayCardBackground(current, introBackgroundInputLabel, canvasWidth, canvasHeight, enable, nextLabel, parts);
     }
 
+    // Same adjustable darkening scrim as the outro's, drawn full-frame over
+    // whatever's showing during the window (the custom card background
+    // above, or the main rotation if none is set) so the intro text stays
+    // readable regardless of how bright that background is.
+    {
+      const introScrimColor = hexToFfmpegColor('#000000', introWindow.overlayOpacity ?? 0.55);
+      const scrimOut = nextLabel();
+      parts.push(
+        `[${current}]drawbox=x=0:y=0:w=${canvasWidth}:h=${canvasHeight}:color=${introScrimColor}:t=fill:enable='${enable}'[${scrimOut}]`
+      );
+      current = scrimOut;
+    }
+
     if (introWindow.showBismillahText) {
       const arabicColor = hexToFfmpegColor(style.colors.arabicTextColor);
       const text = escapeDrawtextValue(introWindow.bismillahText);
@@ -137,13 +150,24 @@ export function buildFilterComplex({
   }
 
   // The surah badge and channel logo are meant to identify the recitation
-  // while it's playing -- once the outro card takes over the screen, they'd
-  // just be sitting there dimly visible under its scrim, so both are gated
-  // to disappear right as the outro window starts (watermark and channel
-  // name badge are intentionally left alone here; only these two were
-  // reported as still showing).
+  // while it's actually playing -- during the intro or outro card they'd
+  // just be sitting there dimly visible under that window's own scrim, so
+  // both are gated to only show in between: after the intro window ends and
+  // before the outro window starts (watermark and channel name badge are
+  // intentionally left alone here; only these two were reported as still
+  // showing over a card).
+  const hasIntro = Boolean(introWindow && introWindow.windowMs > 0);
   const hasOutro = Boolean(outroWindow && outroWindow.enabled && outroWindow.durationSec > 0);
-  const hideBeforeOutro = hasOutro ? `:enable='lt(t\\,${outroWindow.startSec.toFixed(3)})'` : '';
+  const introEndSec = hasIntro ? (introWindow.windowMs / 1000).toFixed(3) : null;
+  const outroStartSec = hasOutro ? outroWindow.startSec.toFixed(3) : null;
+  const badgeVisibilityGate =
+    hasIntro && hasOutro
+      ? `:enable='gte(t\\,${introEndSec})*lt(t\\,${outroStartSec})'`
+      : hasIntro
+        ? `:enable='gte(t\\,${introEndSec})'`
+        : hasOutro
+          ? `:enable='lt(t\\,${outroStartSec})'`
+          : '';
 
   if (style.badges.surahBadge.enabled && style.badges.surahBadge.variant === 'arabic-transliteration') {
     // Two separate drawtext calls, not one two-line block: the Arabic name
@@ -172,13 +196,13 @@ export function buildFilterComplex({
 
     const arabicOut = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${arabicFontPath}':text='${arabicText}':fontsize=${arabicFontSize}:fontcolor=white:x=${x}:y=${arabicY}${hideBeforeOutro}[${arabicOut}]`
+      `[${current}]drawtext=fontfile='${arabicFontPath}':text='${arabicText}':fontsize=${arabicFontSize}:fontcolor=white:x=${x}:y=${arabicY}${badgeVisibilityGate}[${arabicOut}]`
     );
     current = arabicOut;
 
     const translitOut = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${translitText}':fontsize=${translitFontSize}:fontcolor=white:x=${x}:y=${translitY}${hideBeforeOutro}[${translitOut}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':text='${translitText}':fontsize=${translitFontSize}:fontcolor=white:x=${x}:y=${translitY}${badgeVisibilityGate}[${translitOut}]`
     );
     current = translitOut;
   } else if (style.badges.surahBadge.enabled) {
@@ -192,7 +216,7 @@ export function buildFilterComplex({
     const boxOpt = isStacked ? `:box=1:boxcolor=0x00000099:boxborderw=${scaled(18)}` : '';
     const out = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.surahBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}:line_spacing=${scaled(8)}${boxOpt}${hideBeforeOutro}[${out}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.surahBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}:line_spacing=${scaled(8)}${boxOpt}${badgeVisibilityGate}[${out}]`
     );
     current = out;
   }
@@ -228,7 +252,7 @@ export function buildFilterComplex({
     }
 
     const logoOut = nextLabel();
-    parts.push(`[${current}][${logoLabel}]overlay=x=${x}:y=${y}${hideBeforeOutro}[${logoOut}]`);
+    parts.push(`[${current}][${logoLabel}]overlay=x=${x}:y=${y}${badgeVisibilityGate}[${logoOut}]`);
     current = logoOut;
   }
 

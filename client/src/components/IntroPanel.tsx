@@ -40,10 +40,20 @@ export function IntroPanel() {
       )}
 
       {hasIntroWindow && (
-        <CardBackgroundPicker
-          value={intro.cardBackgroundClipId}
-          onChange={(clipId) => setIntro({ cardBackgroundClipId: clipId })}
-        />
+        <>
+          <NumberField
+            label="Overlay darkness"
+            value={intro.overlayOpacity}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(v) => setIntro({ overlayOpacity: v })}
+          />
+          <CardBackgroundPicker
+            value={intro.cardBackgroundClipId}
+            onChange={(clipId) => setIntro({ cardBackgroundClipId: clipId })}
+          />
+        </>
       )}
 
       <p className="text-xs text-neutral-500">

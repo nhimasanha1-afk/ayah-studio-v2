@@ -374,12 +374,14 @@ export async function runSurahExport({
     }
   }
 
+  const introOverlayOpacity = Math.min(1, Math.max(0, Number(introOverrides.overlayOpacity ?? 0.55)));
   const introWindow = {
     windowMs: introWindowTiming.windowMs,
     showBismillahText: bismillahTextEnabled,
     bismillahText: bismillahArabicText,
     showIntroCard: introCardEnabled,
     cardText: { line1: chapter.name_simple, line2: `${chapter.translated_name.name} • ${chapter.id}` },
+    overlayOpacity: introOverlayOpacity,
   };
 
   const videoFilterComplex = buildFilterComplex({

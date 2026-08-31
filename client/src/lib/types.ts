@@ -195,6 +195,10 @@ export interface IntroConfig {
   introCardDurationMs: number;
   // Same override as OutroConfig.cardBackgroundClipId, but for the intro window.
   cardBackgroundClipId: string | null;
+  // Same adjustable darkening scrim as OutroConfig.overlayOpacity, drawn
+  // full-frame over whatever's showing during the intro window (the custom
+  // card background, or the main rotation if none is set).
+  overlayOpacity: number;
 }
 
 export const DEFAULT_INTRO: IntroConfig = {
@@ -203,6 +207,7 @@ export const DEFAULT_INTRO: IntroConfig = {
   bismillahAudioEnabled: false,
   introCardDurationMs: 6000,
   cardBackgroundClipId: null,
+  overlayOpacity: 0.55,
 };
 
 // Mirrors server/src/lib/surahExport.js's resolveBackground input shape.

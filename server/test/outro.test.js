@@ -98,3 +98,37 @@ test('no outro -> the surah badge and logo render with no enable gating at all',
   const logoLine = graph.split(';').find((part) => part.includes('overlay=x=') && !part.startsWith('[3:v]'));
   assert.ok(!logoLine.includes('enable='));
 });
+
+test('enabled intro adds a time-gated full-frame scrim, same as the outro, defaulting to 0.55', () => {
+  const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false };
+  const graph = buildFilterComplex({ ...baseArgs, introWindow, outroWindow: undefined });
+  assert.match(graph, /drawbox=x=0:y=0:w=1280:h=720:color=0x000000@0\.55:t=fill:enable='lt\(t\\,5\.000\)'/);
+});
+
+test('intro overlay opacity is user-adjustable, not hardcoded', () => {
+  const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false, overlayOpacity: 0.2 };
+  const graph = buildFilterComplex({ ...baseArgs, introWindow, outroWindow: undefined });
+  assert.match(graph, /drawbox=x=0:y=0:w=1280:h=720:color=0x000000@0\.2:t=fill:enable='lt\(t\\,5\.000\)'/);
+});
+
+test('with both an intro and an outro, the surah badge and logo only show in between the two windows', () => {
+  const style = resolveStyle({ badges: { surahBadge: { enabled: true } } });
+  const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false };
+  const outroWindow = { enabled: true, startSec: 20, durationSec: 4, line1: 'Thanks', line2: '' };
+  const graph = buildFilterComplex({ ...baseArgs, style, introWindow, outroWindow, logoInputLabel: '3:v' });
+
+  const surahBadgeLine = graph.split(';').find((part) => part.includes('Al-Ikhlas'));
+  assert.match(surahBadgeLine, /enable='gte\(t\\,5\.000\)\*lt\(t\\,20\.000\)'/);
+
+  const logoLine = graph.split(';').find((part) => part.includes('overlay=x=') && !part.startsWith('[3:v]'));
+  assert.match(logoLine, /enable='gte\(t\\,5\.000\)\*lt\(t\\,20\.000\)'/);
+});
+
+test('with an intro but no outro, the surah badge only shows after the intro window ends', () => {
+  const style = resolveStyle({ badges: { surahBadge: { enabled: true } } });
+  const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false };
+  const graph = buildFilterComplex({ ...baseArgs, style, introWindow, outroWindow: undefined });
+
+  const surahBadgeLine = graph.split(';').find((part) => part.includes('Al-Ikhlas'));
+  assert.match(surahBadgeLine, /enable='gte\(t\\,5\.000\)'\[v\d+\]$/);
+});
