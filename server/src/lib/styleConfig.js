@@ -56,7 +56,7 @@ export const ZOOM_PAN_STYLES = ['none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-
 
 export const DEFAULT_STYLE = {
   typography: {
-    arabicFont: 'scheherazade',
+    arabicFont: 'noto-naskh',
     latinFont: 'noto-sans',
     arabicFontSize: 60,
     translationFontSize: 32,

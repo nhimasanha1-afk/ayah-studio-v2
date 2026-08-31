@@ -79,7 +79,7 @@ export interface StyleConfig {
 
 export const DEFAULT_STYLE: StyleConfig = {
   typography: {
-    arabicFont: 'scheherazade',
+    arabicFont: 'noto-naskh',
     latinFont: 'noto-sans',
     arabicFontSize: 60,
     translationFontSize: 32,
@@ -125,7 +125,14 @@ export const FONT_REGISTRY: {
   latin: Record<LatinFontKey, { family: string; label: string }>;
 } = {
   arabic: {
-    scheherazade: { family: 'Scheherazade New', label: 'Scheherazade New (Quranic, recommended)' },
+    // Not the default: renders correctly in the browser preview and in
+    // local Windows exports, but a real deployed export showed every
+    // Arabic glyph replaced with a repeated tofu-box placeholder -- almost
+    // certainly a Linux/fontconfig-specific incompatibility, still under
+    // investigation. Left selectable (not removed) in case it's a narrower
+    // issue than it looks, but do not make this the default again until
+    // that's confirmed fixed with a real exported (not just previewed) file.
+    scheherazade: { family: 'Scheherazade New', label: 'Scheherazade New (Quranic -- may not render correctly on export)' },
     'noto-naskh': { family: 'Noto Naskh Arabic', label: 'Noto Naskh Arabic' },
     amiri: { family: 'Amiri', label: 'Amiri' },
   },
