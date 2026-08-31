@@ -1,7 +1,7 @@
 // Mirrors server/src/lib/styleConfig.js, introTiming.js and surahExport.js
 // exactly, so the JSON sent to POST /api/export/surah needs no translation.
 
-export type ArabicFontKey = 'noto-naskh' | 'amiri';
+export type ArabicFontKey = 'scheherazade' | 'noto-naskh' | 'amiri';
 export type LatinFontKey = 'noto-sans' | 'inter';
 export type BadgePosition =
   | 'top-left'
@@ -79,7 +79,7 @@ export interface StyleConfig {
 
 export const DEFAULT_STYLE: StyleConfig = {
   typography: {
-    arabicFont: 'noto-naskh',
+    arabicFont: 'scheherazade',
     latinFont: 'noto-sans',
     arabicFontSize: 60,
     translationFontSize: 32,
@@ -125,6 +125,7 @@ export const FONT_REGISTRY: {
   latin: Record<LatinFontKey, { family: string; label: string }>;
 } = {
   arabic: {
+    scheherazade: { family: 'Scheherazade New', label: 'Scheherazade New (Quranic, recommended)' },
     'noto-naskh': { family: 'Noto Naskh Arabic', label: 'Noto Naskh Arabic' },
     amiri: { family: 'Amiri', label: 'Amiri' },
   },

@@ -1,6 +1,11 @@
 @import "tailwindcss";
 
 @font-face {
+  font-family: 'Scheherazade New';
+  src: url('/fonts/ScheherazadeNew-Regular.ttf') format('truetype');
+  font-display: swap;
+}
+@font-face {
   font-family: 'Noto Naskh Arabic';
   src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
   font-display: swap;

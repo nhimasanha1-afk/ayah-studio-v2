@@ -1,5 +1,13 @@
 export const FONT_REGISTRY = {
   arabic: {
+    // Default: a classical Quranic-style Naskh typeface (SIL OFL 1.1, real
+    // release verified against its published SHA512 checksum) with clearly
+    // separated, larger diacritic marks than either general-purpose option
+    // below -- confirmed via direct rendered-frame comparison at the app's
+    // real default caption size, after a user reported a kasra/fatha
+    // legibility complaint that a real vs synthetic text audit ruled out as
+    // a data or shaping bug.
+    scheherazade: { family: 'Scheherazade New', file: 'ScheherazadeNew-Regular.ttf' },
     'noto-naskh': { family: 'Noto Naskh Arabic', file: 'NotoNaskhArabic-Regular.ttf' },
     amiri: { family: 'Amiri', file: 'Amiri-Regular.ttf' },
   },
@@ -48,7 +56,7 @@ export const ZOOM_PAN_STYLES = ['none', 'zoom-in', 'zoom-out', 'pan-left', 'pan-
 
 export const DEFAULT_STYLE = {
   typography: {
-    arabicFont: 'noto-naskh',
+    arabicFont: 'scheherazade',
     latinFont: 'noto-sans',
     arabicFontSize: 60,
     translationFontSize: 32,
