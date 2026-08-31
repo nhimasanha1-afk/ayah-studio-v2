@@ -51,6 +51,8 @@ export function PreviewPane() {
   const aspectRatio = useExportConfigStore((s) => s.aspectRatio);
   const uploadedBackgroundClips = useExportConfigStore((s) => s.uploadedBackgroundClips);
   const uploadedCardImages = useExportConfigStore((s) => s.uploadedCardImages);
+  const previewClipId = useExportConfigStore((s) => s.previewClipId);
+  const setPreviewClip = useExportConfigStore((s) => s.setPreviewClip);
 
   const preview = usePreviewData(chapterId, reciterId, translationId);
   const library = useBackgroundLibrary();
@@ -136,6 +138,23 @@ export function PreviewPane() {
   );
   const activeMainBackgroundUrl = activeMainBackground?.url ?? null;
   useEffect(() => setVideoFailed(false), [activeMainBackgroundUrl]);
+
+  // A clip the user just checked into the pool (or explicitly asked to
+  // preview) -- shown in place of whatever the real timeline would show,
+  // so they can see it before deciding to keep it. Highest priority: it
+  // overrides even an intro/outro card's own background while active.
+  const manualPreview = useMemo(
+    () => resolveCardBackground(previewClipId, uploadedCardImages, uploadedBackgroundClips, library.data ?? null),
+    [previewClipId, uploadedCardImages, uploadedBackgroundClips, library.data]
+  );
+  const manualPreviewTitle = useMemo(() => {
+    if (!previewClipId) return null;
+    const fromLibrary = Object.values(library.data ?? {})
+      .flat()
+      .find((c) => c.id === previewClipId);
+    if (fromLibrary) return fromLibrary.title;
+    return uploadedBackgroundClips.find((c) => c.id === previewClipId)?.title ?? previewClipId;
+  }, [previewClipId, library.data, uploadedBackgroundClips]);
 
   function stopTimer() {
     if (rafRef.current !== null) {
@@ -244,6 +263,9 @@ export function PreviewPane() {
       pausePhase();
       setIsPlaying(false);
     } else {
+      // Resuming real playback means they want the real timeline again, not
+      // the manually-previewed clip.
+      setPreviewClip(null);
       setIsPlaying(true);
       startPhase();
     }
@@ -266,6 +288,7 @@ export function PreviewPane() {
   }
 
   function handleSeek(targetVirtualMs: number) {
+    setPreviewClip(null);
     pausePhase();
     let targetPhase: Phase;
     let elapsed: number;
@@ -341,11 +364,27 @@ export function PreviewPane() {
             : { aspectRatio: '16 / 9' }
         }
       >
-        {/* Background: the active card's own override during intro/outro,
+        {/* Background: a manually-previewed clip (just checked into the pool,
+            or explicitly asked to preview) takes priority over everything
+            else; then the active card's own override during intro/outro;
             otherwise the main rotation's currently-active clip (real
             time-based rotation, a hard cut between clips -- the crossfade
             blend itself is export-only, a real ffmpeg xfade filter). */}
-        {activeCardBackground ? (
+        {manualPreview ? (
+          manualPreview.type === 'image' ? (
+            <img key={manualPreview.url} src={manualPreview.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          ) : (
+            <video
+              key={manualPreview.url}
+              src={manualPreview.url}
+              className="absolute inset-0 h-full w-full object-cover"
+              muted
+              autoPlay
+              loop
+              playsInline
+            />
+          )
+        ) : activeCardBackground ? (
           activeCardBackground.type === 'image' ? (
             <img
               key={activeCardBackground.url}
@@ -380,6 +419,20 @@ export function PreviewPane() {
             className="absolute inset-0"
             style={{ background: 'linear-gradient(120deg, #0b1f1a 0%, #1c3d33 60%, #1c3d33 100%)' }}
           />
+        )}
+
+        {manualPreview && (
+          <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-xs text-white">
+            <span>Previewing: {manualPreviewTitle}</span>
+            <button
+              type="button"
+              onClick={() => setPreviewClip(null)}
+              className="rounded-full px-1 text-neutral-300 hover:text-white"
+              aria-label="Stop previewing"
+            >
+              ✕
+            </button>
+          </div>
         )}
 
         {/* Surah badge (hidden during the intro/outro cards, mirrors videoComposition.js's badgeVisibilityGate) */}

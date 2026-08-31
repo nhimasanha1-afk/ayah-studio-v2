@@ -34,6 +34,12 @@ interface ExportConfigState {
   aspectRatio: AspectRatio;
   uploadedBackgroundClips: UploadedBackgroundClip[];
   uploadedCardImages: UploadedCardImage[];
+  // The clip the preview should show right now regardless of the real
+  // rotation timeline -- set whenever the user checks a new clip into the
+  // pool, so they can see what it looks like immediately instead of
+  // scrubbing to wherever it'd naturally play. null means "show the real
+  // rotation/phase as normal."
+  previewClipId: string | null;
 
   setChapterId: (id: number) => void;
   setReciterId: (id: number) => void;
@@ -59,6 +65,7 @@ interface ExportConfigState {
   toggleClipsInPool: (clipIds: string[]) => void;
   addUploadedBackgroundClip: (clip: UploadedBackgroundClip) => void;
   addUploadedCardImage: (image: UploadedCardImage) => void;
+  setPreviewClip: (clipId: string | null) => void;
 
   setAudioSync: (partial: Partial<AudioSyncConfig>) => void;
   setCaptionTiming: (partial: Partial<CaptionTimingConfig>) => void;
@@ -79,6 +86,7 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
   aspectRatio: '16:9',
   uploadedBackgroundClips: [],
   uploadedCardImages: [],
+  previewClipId: null,
 
   setChapterId: (chapterId) => set({ chapterId }),
   setReciterId: (reciterId) => set({ reciterId }),
@@ -163,6 +171,8 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
 
   addUploadedCardImage: (image) =>
     set((s) => ({ uploadedCardImages: [...s.uploadedCardImages, image] })),
+
+  setPreviewClip: (clipId) => set({ previewClipId: clipId }),
 
   setAudioSync: (partial) => set((s) => ({ audioSync: { ...s.audioSync, ...partial } })),
   setCaptionTiming: (partial) => set((s) => ({ captionTiming: { ...s.captionTiming, ...partial } })),

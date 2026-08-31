@@ -18,9 +18,19 @@ export function BackgroundPanel() {
   const toggleClipsInPool = useExportConfigStore((s) => s.toggleClipsInPool);
   const moveClipInPool = useExportConfigStore((s) => s.moveClipInPool);
   const reorderClipInPool = useExportConfigStore((s) => s.reorderClipInPool);
+  const setPreviewClip = useExportConfigStore((s) => s.setPreviewClip);
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Checking a clip in also previews it immediately, so you can see what it
+  // looks like before committing to it -- unchecking just removes it as
+  // before, with no preview side effect.
+  function handleToggle(clipId: string) {
+    const wasSelected = background.clipIds.includes(clipId);
+    toggleClipInPool(clipId);
+    if (!wasSelected) setPreviewClip(clipId);
+  }
 
   const clipTitleById = new Map([
     ...Object.values(library.data ?? {})
@@ -68,6 +78,15 @@ export function BackgroundPanel() {
               >
                 <span className="text-neutral-500" aria-hidden="true">⠿</span>
                 <span className="flex-1 truncate">{clipTitleById.get(clipId) ?? clipId}</span>
+                <button
+                  type="button"
+                  className="rounded px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-700"
+                  onClick={() => setPreviewClip(clipId)}
+                  aria-label="Preview"
+                  title="Show this clip in the preview"
+                >
+                  👁
+                </button>
                 <button
                   type="button"
                   className="rounded px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-700 disabled:opacity-30"
@@ -119,7 +138,7 @@ export function BackgroundPanel() {
                       type="checkbox"
                       className="h-4 w-4 rounded border-neutral-700 bg-neutral-900 accent-emerald-500"
                       checked={selected}
-                      onChange={() => toggleClipInPool(clip.id)}
+                      onChange={() => handleToggle(clip.id)}
                     />
                     {clip.title}
                   </label>
@@ -159,7 +178,7 @@ export function BackgroundPanel() {
                           type="checkbox"
                           className="h-4 w-4 rounded border-neutral-700 bg-neutral-900 accent-emerald-500"
                           checked={selected}
-                          onChange={() => toggleClipInPool(clip.id)}
+                          onChange={() => handleToggle(clip.id)}
                         />
                         {clip.title}
                       </label>
