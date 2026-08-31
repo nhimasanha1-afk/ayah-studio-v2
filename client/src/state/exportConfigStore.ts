@@ -56,6 +56,7 @@ interface ExportConfigState {
   toggleClipInPool: (clipId: string) => void;
   moveClipInPool: (clipId: string, direction: 'up' | 'down') => void;
   reorderClipInPool: (fromIndex: number, toIndex: number) => void;
+  toggleClipsInPool: (clipIds: string[]) => void;
   addUploadedBackgroundClip: (clip: UploadedBackgroundClip) => void;
   addUploadedCardImage: (image: UploadedCardImage) => void;
 
@@ -141,6 +142,20 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
       const [moved] = clipIds.splice(fromIndex, 1);
       clipIds.splice(toIndex, 0, moved);
       return { background: { ...s.background, clipIds } };
+    }),
+
+  // Toggles a whole group at once (e.g. "select all in this category"):
+  // if every clip in the group is already selected, removes all of them;
+  // otherwise adds whichever ones aren't selected yet, appended in the
+  // group's own order, leaving already-selected ones at their current
+  // position in the pool.
+  toggleClipsInPool: (clipIds) =>
+    set((s) => {
+      const allSelected = clipIds.every((id) => s.background.clipIds.includes(id));
+      const nextClipIds = allSelected
+        ? s.background.clipIds.filter((id) => !clipIds.includes(id))
+        : [...s.background.clipIds, ...clipIds.filter((id) => !s.background.clipIds.includes(id))];
+      return { background: { ...s.background, clipIds: nextClipIds } };
     }),
 
   addUploadedBackgroundClip: (clip) =>

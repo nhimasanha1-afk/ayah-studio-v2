@@ -15,6 +15,7 @@ export function BackgroundPanel() {
   const setBackgroundOrder = useExportConfigStore((s) => s.setBackgroundOrder);
   const setBackgroundTiming = useExportConfigStore((s) => s.setBackgroundTiming);
   const toggleClipInPool = useExportConfigStore((s) => s.toggleClipInPool);
+  const toggleClipsInPool = useExportConfigStore((s) => s.toggleClipsInPool);
   const moveClipInPool = useExportConfigStore((s) => s.moveClipInPool);
   const reorderClipInPool = useExportConfigStore((s) => s.reorderClipInPool);
 
@@ -133,29 +134,42 @@ export function BackgroundPanel() {
       <BackgroundVideoGenerateField />
 
       {library.data &&
-        Object.entries(library.data).map(([category, clips]) => (
-          <div key={category} className="space-y-1.5">
-            <span className="text-xs font-medium text-neutral-400 capitalize">{category}</span>
-            <ul className="space-y-1">
-              {clips.map((clip) => {
-                const selected = background.clipIds.includes(clip.id);
-                return (
-                  <li key={clip.id}>
-                    <label className="flex items-center gap-2 text-sm text-neutral-200">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-neutral-700 bg-neutral-900 accent-emerald-500"
-                        checked={selected}
-                        onChange={() => toggleClipInPool(clip.id)}
-                      />
-                      {clip.title}
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
+        Object.entries(library.data).map(([category, clips]) => {
+          const categoryClipIds = clips.map((c) => c.id);
+          const allSelected = categoryClipIds.every((id) => background.clipIds.includes(id));
+          return (
+            <div key={category} className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-neutral-400 capitalize">{category}</span>
+                <button
+                  type="button"
+                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-emerald-400 hover:bg-neutral-800"
+                  onClick={() => toggleClipsInPool(categoryClipIds)}
+                >
+                  {allSelected ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
+              <ul className="space-y-1">
+                {clips.map((clip) => {
+                  const selected = background.clipIds.includes(clip.id);
+                  return (
+                    <li key={clip.id}>
+                      <label className="flex items-center gap-2 text-sm text-neutral-200">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-neutral-700 bg-neutral-900 accent-emerald-500"
+                          checked={selected}
+                          onChange={() => toggleClipInPool(clip.id)}
+                        />
+                        {clip.title}
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
 
       <div className="border-t border-neutral-800 pt-3 space-y-3">
         <SelectField label="Playback order" value={background.order} onChange={(v) => setBackgroundOrder(v as typeof background.order)}>
