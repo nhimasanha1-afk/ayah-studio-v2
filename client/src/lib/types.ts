@@ -172,6 +172,10 @@ export interface OutroConfig {
   // uploadCardImage) -- null means "use the main background" (unchanged
   // behavior).
   cardBackgroundClipId: string | null;
+  // Opacity (0-1) of the black scrim drawn over the card background so the
+  // text stays readable. Was a hardcoded 0.55; a custom card image/video can
+  // need more or less darkening to stay legible, so this is user-adjustable.
+  overlayOpacity: number;
 }
 
 export const DEFAULT_OUTRO: OutroConfig = {
@@ -180,6 +184,7 @@ export const DEFAULT_OUTRO: OutroConfig = {
   line1: 'JazakAllah Khair for watching',
   line2: '',
   cardBackgroundClipId: null,
+  overlayOpacity: 0.55,
 };
 
 // Mirrors server/src/lib/introTiming.js's computeIntroTimingWindow inputs.

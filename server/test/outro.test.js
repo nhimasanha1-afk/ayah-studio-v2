@@ -37,6 +37,18 @@ test('enabled outro adds a time-gated full-frame scrim and centered text, and st
   assert.ok(graph.endsWith('[vout]'));
 });
 
+test('outro overlay opacity defaults to 0.55 when unset', () => {
+  const outroWindow = { enabled: true, startSec: 13, durationSec: 4, line1: 'JazakAllah Khair', line2: '' };
+  const graph = buildFilterComplex({ ...baseArgs, outroWindow });
+  assert.match(graph, /color=0x000000@0\.55:t=fill/);
+});
+
+test('outro overlay opacity is user-adjustable, not hardcoded', () => {
+  const outroWindow = { enabled: true, startSec: 13, durationSec: 4, line1: 'JazakAllah Khair', line2: '', overlayOpacity: 0.15 };
+  const graph = buildFilterComplex({ ...baseArgs, outroWindow });
+  assert.match(graph, /color=0x000000@0\.15:t=fill/);
+});
+
 test('outro with both lines joins them with a newline in the drawtext', () => {
   const outroWindow = { enabled: true, startSec: 10, durationSec: 3, line1: 'Thank you', line2: 'Subscribe for more' };
   const graph = buildFilterComplex({ ...baseArgs, outroWindow });
@@ -49,4 +61,40 @@ test('outro is drawn after the logo overlay, on top of it', () => {
   const overlayIndex = graph.indexOf('overlay=x=');
   const outroIndex = graph.indexOf('drawbox=x=0:y=0');
   assert.ok(overlayIndex >= 0 && outroIndex >= 0 && outroIndex > overlayIndex);
+});
+
+test('enabled outro hides the surah badge and channel logo once its window starts, so neither shows over the outro card', () => {
+  const style = resolveStyle({ badges: { surahBadge: { enabled: true } } });
+  const outroWindow = { enabled: true, startSec: 13, durationSec: 4, line1: 'JazakAllah Khair', line2: '' };
+  const graph = buildFilterComplex({ ...baseArgs, style, outroWindow, logoInputLabel: '3:v' });
+
+  const surahBadgeLine = graph.split(';').find((part) => part.includes('Al-Ikhlas'));
+  assert.match(surahBadgeLine, /enable='lt\(t\\,13\.000\)'/);
+
+  const logoLine = graph.split(';').find((part) => part.startsWith('[3:v]') === false && part.includes('overlay=x='));
+  assert.match(logoLine, /enable='lt\(t\\,13\.000\)'/);
+});
+
+test('the arabic-transliteration surah badge variant hides both of its drawtext lines once the outro starts', () => {
+  const style = resolveStyle({ badges: { surahBadge: { enabled: true, variant: 'arabic-transliteration' } } });
+  const outroWindow = { enabled: true, startSec: 9, durationSec: 3, line1: 'Thanks', line2: '' };
+  const surahBadgeText = { ...baseArgs.surahBadgeText, arabicName: 'الإخلاص' };
+  const graph = buildFilterComplex({ ...baseArgs, style, outroWindow, surahBadgeText });
+
+  const badgeLines = graph.split(';').filter((part) => part.includes('الإخلاص') || part.includes('Al-Ikhlas'));
+  assert.equal(badgeLines.length, 2);
+  for (const line of badgeLines) {
+    assert.match(line, /enable='lt\(t\\,9\.000\)'/);
+  }
+});
+
+test('no outro -> the surah badge and logo render with no enable gating at all', () => {
+  const style = resolveStyle({ badges: { surahBadge: { enabled: true } } });
+  const graph = buildFilterComplex({ ...baseArgs, style, outroWindow: undefined, logoInputLabel: '3:v' });
+
+  const surahBadgeLine = graph.split(';').find((part) => part.includes('Al-Ikhlas'));
+  assert.ok(!surahBadgeLine.includes('enable='));
+
+  const logoLine = graph.split(';').find((part) => part.includes('overlay=x=') && !part.startsWith('[3:v]'));
+  assert.ok(!logoLine.includes('enable='));
 });

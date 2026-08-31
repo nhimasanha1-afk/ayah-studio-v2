@@ -136,6 +136,15 @@ export function buildFilterComplex({
     current = out;
   }
 
+  // The surah badge and channel logo are meant to identify the recitation
+  // while it's playing -- once the outro card takes over the screen, they'd
+  // just be sitting there dimly visible under its scrim, so both are gated
+  // to disappear right as the outro window starts (watermark and channel
+  // name badge are intentionally left alone here; only these two were
+  // reported as still showing).
+  const hasOutro = Boolean(outroWindow && outroWindow.enabled && outroWindow.durationSec > 0);
+  const hideBeforeOutro = hasOutro ? `:enable='lt(t\\,${outroWindow.startSec.toFixed(3)})'` : '';
+
   if (style.badges.surahBadge.enabled && style.badges.surahBadge.variant === 'arabic-transliteration') {
     // Two separate drawtext calls, not one two-line block: the Arabic name
     // needs the Arabic font and the transliteration needs the Latin font,
@@ -163,13 +172,13 @@ export function buildFilterComplex({
 
     const arabicOut = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${arabicFontPath}':text='${arabicText}':fontsize=${arabicFontSize}:fontcolor=white:x=${x}:y=${arabicY}[${arabicOut}]`
+      `[${current}]drawtext=fontfile='${arabicFontPath}':text='${arabicText}':fontsize=${arabicFontSize}:fontcolor=white:x=${x}:y=${arabicY}${hideBeforeOutro}[${arabicOut}]`
     );
     current = arabicOut;
 
     const translitOut = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${translitText}':fontsize=${translitFontSize}:fontcolor=white:x=${x}:y=${translitY}[${translitOut}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':text='${translitText}':fontsize=${translitFontSize}:fontcolor=white:x=${x}:y=${translitY}${hideBeforeOutro}[${translitOut}]`
     );
     current = translitOut;
   } else if (style.badges.surahBadge.enabled) {
@@ -183,7 +192,7 @@ export function buildFilterComplex({
     const boxOpt = isStacked ? `:box=1:boxcolor=0x00000099:boxborderw=${scaled(18)}` : '';
     const out = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.surahBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}:line_spacing=${scaled(8)}${boxOpt}[${out}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.surahBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}:line_spacing=${scaled(8)}${boxOpt}${hideBeforeOutro}[${out}]`
     );
     current = out;
   }
@@ -219,7 +228,7 @@ export function buildFilterComplex({
     }
 
     const logoOut = nextLabel();
-    parts.push(`[${current}][${logoLabel}]overlay=x=${x}:y=${y}[${logoOut}]`);
+    parts.push(`[${current}][${logoLabel}]overlay=x=${x}:y=${y}${hideBeforeOutro}[${logoOut}]`);
     current = logoOut;
   }
 
@@ -233,7 +242,7 @@ export function buildFilterComplex({
       current = overlayCardBackground(current, outroBackgroundInputLabel, canvasWidth, canvasHeight, enable, nextLabel, parts);
     }
 
-    const scrimColor = hexToFfmpegColor('#000000', 0.55);
+    const scrimColor = hexToFfmpegColor('#000000', outroWindow.overlayOpacity ?? 0.55);
     const scrimOut = nextLabel();
     parts.push(
       `[${current}]drawbox=x=0:y=0:w=${canvasWidth}:h=${canvasHeight}:color=${scrimColor}:t=fill:enable='${enable}'[${scrimOut}]`

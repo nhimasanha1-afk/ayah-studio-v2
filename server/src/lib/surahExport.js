@@ -279,8 +279,16 @@ export async function runSurahExport({
   const outroDurationSeconds = outroEnabled ? Math.max(0, Number(outroOverrides.durationMs ?? 4000)) / 1000 : 0;
   const outroLine1 = outroOverrides.line1 ?? 'JazakAllah Khair for watching';
   const outroLine2 = outroOverrides.line2 ?? '';
+  const outroOverlayOpacity = Math.min(1, Math.max(0, Number(outroOverrides.overlayOpacity ?? 0.55)));
   const outroWindow = outroEnabled
-    ? { enabled: true, startSec: contentDurationSeconds, durationSec: outroDurationSeconds, line1: outroLine1, line2: outroLine2 }
+    ? {
+        enabled: true,
+        startSec: contentDurationSeconds,
+        durationSec: outroDurationSeconds,
+        line1: outroLine1,
+        line2: outroLine2,
+        overlayOpacity: outroOverlayOpacity,
+      }
     : { enabled: false };
   const totalDurationSeconds = contentDurationSeconds + outroDurationSeconds;
 

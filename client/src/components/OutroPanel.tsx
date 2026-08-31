@@ -25,6 +25,14 @@ export function OutroPanel() {
           />
           <TextField label="Line 1" value={outro.line1} onChange={(v) => setOutro({ line1: v })} />
           <TextField label="Line 2 (optional)" value={outro.line2} onChange={(v) => setOutro({ line2: v })} />
+          <NumberField
+            label="Overlay darkness"
+            value={outro.overlayOpacity}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(v) => setOutro({ overlayOpacity: v })}
+          />
           <CardBackgroundPicker
             value={outro.cardBackgroundClipId}
             onChange={(clipId) => setOutro({ cardBackgroundClipId: clipId })}
@@ -33,8 +41,8 @@ export function OutroPanel() {
       )}
 
       <p className="text-xs text-neutral-500">
-        A fixed block of extra time appended after the recitation ends, with a darkened full-frame card over
-        your text -- the video's total length grows to make room for it.
+        A fixed block of extra time appended after the recitation ends, with a full-frame card over your text
+        (darkness adjustable above) -- the video's total length grows to make room for it.
       </p>
     </Panel>
   );

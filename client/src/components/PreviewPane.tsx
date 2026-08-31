@@ -382,8 +382,8 @@ export function PreviewPane() {
           />
         )}
 
-        {/* Surah badge (persistent) */}
-        {style.badges.surahBadge.enabled && chapter && (
+        {/* Surah badge (hidden once the outro card takes over, mirrors videoComposition.js's hideBeforeOutro) */}
+        {style.badges.surahBadge.enabled && chapter && phase !== 'outro' && (
           <div
             style={{ ...badgePositionStyle(style.badges.surahBadge.position), fontFamily: 'Inter' }}
             className={`text-white ${style.badges.surahBadge.variant === 'stacked-title-card' ? 'bg-black/60 rounded px-3 py-2 text-center' : ''}`}
@@ -442,8 +442,9 @@ export function PreviewPane() {
           </div>
         )}
 
-        {/* Channel logo: real uploaded image if present, else the placeholder monogram */}
+        {/* Channel logo: real uploaded image if present, else the placeholder monogram (hidden once the outro card takes over) */}
         {style.badges.channelLogo.enabled &&
+          phase !== 'outro' &&
           (style.badges.channelLogo.logoId ? (
             <img
               src={`/uploads/logos/${style.badges.channelLogo.logoId}`}
@@ -558,7 +559,10 @@ export function PreviewPane() {
         )}
 
         {phase === 'outro' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/55 px-6 text-center">
+          <div
+            className="absolute inset-0 flex items-center justify-center px-6 text-center"
+            style={{ background: `rgba(0, 0, 0, ${outro.overlayOpacity})` }}
+          >
             <div style={{ fontFamily: 'Inter', fontSize: 15, color: 'white' }}>
               <div>{outro.line1}</div>
               {outro.line2 && <div className="mt-1 opacity-80">{outro.line2}</div>}
