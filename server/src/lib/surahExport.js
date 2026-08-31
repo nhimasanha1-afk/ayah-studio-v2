@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { ffmpegPath as ffmpegPathBin } from './ffmpegBinaries.js';
 import { probe } from './ffmpeg.js';
 import { fetchChapter, fetchVerses, fetchReciterAudioFile } from './quranApi.js';
@@ -16,7 +17,7 @@ import { ensureBackgroundClipCached } from './backgroundCache.js';
 import { isUploadedBackgroundClipId, resolveUploadedBackgroundVideoPath } from './backgroundVideoUpload.js';
 import { isUploadedCardImageId, resolveUploadedCardImagePath } from './cardImageUpload.js';
 import { resolvePlaybackOrder, planBackgroundSequence } from './backgroundSequence.js';
-import { buildBackgroundFilterGraph } from './backgroundFilterGraph.js';
+import { renderBackgroundRotation } from './backgroundRotationRender.js';
 import { buildFilterComplex, buildAudioFilterComplex } from './videoComposition.js';
 import { resolveStyle } from './styleConfig.js';
 import { computeIntroTimingWindow } from './introTiming.js';
@@ -114,11 +115,17 @@ function composeVideo({ inputs, durationSeconds, outputPath, filterComplex, audi
 /**
  * Resolves the background: either a static placeholder image (default,
  * unchanged from steps 1-4) or a real rotating clip pool with crossfades,
- * when background.clipIds is non-empty. Returns the ffmpeg inputs to
- * prepend and the label the rest of the graph should read the background
- * from.
+ * when background.clipIds is non-empty. Either way, this always hands back
+ * a single plain video input (`0:v`) for the rest of the graph to read from
+ * -- a multi-clip rotation is pre-flattened to one file by
+ * renderBackgroundRotation first, rather than feeding every clip into the
+ * main filter graph as simultaneous inputs (the old approach, which opened
+ * one real decoder per clip for the whole video's duration -- confirmed as
+ * the cause of a real OOM on a long rotation pool at 1080p). The caller is
+ * responsible for deleting the returned flattenedPath once the export is
+ * done with it, when one is returned.
  */
-async function resolveBackground({ background, totalDurationSeconds, canvasWidth, canvasHeight }) {
+async function resolveBackground({ background, totalDurationSeconds, canvasWidth, canvasHeight, tmpDir }) {
   const clipIds = background.clipIds ?? [];
   if (clipIds.length === 0) {
     const backgroundPath = ensureStaticBackground(BACKGROUNDS_DIR, canvasWidth, canvasHeight);
@@ -148,23 +155,26 @@ async function resolveBackground({ background, totalDurationSeconds, canvasWidth
     transitionDurationSeconds,
   });
 
-  const { filterParts, outputLabel, requiredSpanSeconds } = buildBackgroundFilterGraph({
+  const flattenedPath = path.join(tmpDir, `bg-flattened-${randomUUID()}.mp4`);
+  await renderBackgroundRotation({
     instances,
+    cachedPaths,
     slotDurationSeconds,
     transitionDurationSeconds,
     transitionStyle,
-    inputIndexOffset: 0,
     canvasWidth,
     canvasHeight,
+    tmpDir,
+    outputPath: flattenedPath,
   });
 
-  const inputs = instances.map((instance) => ({
-    path: cachedPaths.get(instance.clip),
-    streamLoop: true,
-    duration: requiredSpanSeconds,
-  }));
-
-  return { inputs, backgroundInputLabel: outputLabel, backgroundFilterParts: filterParts, instances };
+  // No loop flag needed: renderBackgroundRotation already produces a real
+  // video covering at least totalDurationSeconds (planBackgroundSequence's
+  // own contract), and composeVideo's outer `-t totalDurationSeconds`
+  // truncates to the exact target length regardless. `-loop 1` (used by the
+  // static-placeholder case above) is a still-image-only ffmpeg option and
+  // errors out ("Option loop not found") on a real video demuxer.
+  return { inputs: [{ path: flattenedPath }], backgroundInputLabel: '0:v', flattenedPath };
 }
 
 /**
@@ -311,11 +321,12 @@ export async function runSurahExport({
   );
 
   report('downloading-background');
-  const { inputs: backgroundInputs, backgroundInputLabel, backgroundFilterParts = [] } = await resolveBackground({
+  const { inputs: backgroundInputs, backgroundInputLabel, flattenedPath: backgroundFlattenedPath } = await resolveBackground({
     background: backgroundOverrides,
     totalDurationSeconds,
     canvasWidth,
     canvasHeight,
+    tmpDir: TMP_DIR,
   });
 
   const hasLogo = style.badges.channelLogo.enabled;
@@ -425,18 +436,26 @@ export async function runSurahExport({
   ];
   const finalAudioOutLabel = 'audioPadded';
 
-  const filterComplex = [...backgroundFilterParts, videoFilterComplex, ...paddedAudioParts].join(';');
+  const filterComplex = [videoFilterComplex, ...paddedAudioParts].join(';');
   const audioMapLabel = `[${finalAudioOutLabel}]`;
 
   report('encoding', 0);
-  await composeVideo({
-    inputs,
-    durationSeconds: totalDurationSeconds,
-    outputPath,
-    filterComplex,
-    audioMapLabel,
-    onProgress: (fraction) => report('encoding', fraction),
-  });
+  try {
+    await composeVideo({
+      inputs,
+      durationSeconds: totalDurationSeconds,
+      outputPath,
+      filterComplex,
+      audioMapLabel,
+      onProgress: (fraction) => report('encoding', fraction),
+    });
+  } finally {
+    // The flattened rotation is a real (potentially large) intermediate
+    // video file in TMP_DIR, unlike the tiny .ass subtitle file next to it
+    // -- worth cleaning up explicitly rather than letting it accumulate
+    // across exports.
+    if (backgroundFlattenedPath) fs.rmSync(backgroundFlattenedPath, { force: true });
+  }
 
   const srtPath = outputPath.replace(/\.mp4$/, '.srt');
   fs.writeFileSync(srtPath, buildSrt(shiftedCaptionData, introWindow), 'utf8');
