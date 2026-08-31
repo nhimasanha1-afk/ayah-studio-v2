@@ -42,10 +42,23 @@ function normalizeChain(inputLabel, canvasWidth, canvasHeight, outLabel) {
  * Renders one instance of the rotation to its own short file, using at most
  * the previous clip's tail + this clip's head -- never more than 2 real clip
  * decoders open at once, regardless of how many total instances the full
- * rotation has. Segment boundaries are chosen so that concatenating segment
- * 0..N-1 in order (see renderBackgroundRotation) reproduces exactly what the
- * old single-filter-graph approach (backgroundFilterGraph.js) would have
- * shown at every point in time:
+ * rotation has. This deliberately breaks the crossfade chain into
+ * independent short pieces rather than one long sequential xfade graph:
+ * confirmed via direct measurement that a single long chain (43 sequential
+ * xfade steps for a real 5-minute 1080p rotation) needs ~3GB of buffering
+ * regardless of whether the underlying clip files are deduplicated -- the
+ * memory cost comes from FFmpeg having to hold early blend results in
+ * memory while working through a long dependent chain, not from how many
+ * real file inputs are open. Breaking it into short, independently-encoded
+ * segments (concatenated afterward, see renderBackgroundRotation) avoids
+ * that deep-buffering cost entirely, at the real cost of a second encoding
+ * pass over the whole video's background footage -- an accepted, measured
+ * tradeoff (see renderBackgroundRotation's own doc comment) chosen so this
+ * fits in 2GB rather than needing ~3-4GB.
+ *
+ * Segment boundaries are chosen so that concatenating segment 0..N-1 in
+ * order reproduces exactly what the old single-filter-graph approach
+ * (backgroundFilterGraph.js) would have shown at every point in time:
  *   - instance 0: solo, length = slot - transition (it stops exactly where
  *     instance 1's crossfade-in begins -- instance 0's own tail beyond that
  *     point is what gets blended INTO instance 1's segment, not this one).
@@ -78,7 +91,10 @@ async function renderSegment({
       '-filter_complex', normalizeChain('0:v', canvasWidth, canvasHeight, 'out'),
       '-map', '[out]',
       '-an',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+      // ultrafast: this intermediate segment gets fully re-decoded and
+      // re-encoded again by the main composition pass, so its own encode
+      // quality is irrelevant -- only speed matters here.
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
       outputPath,
     ];
     await runFfmpeg(args);
@@ -100,7 +116,7 @@ async function renderSegment({
     '-filter_complex', filter,
     '-map', '[out]',
     '-an',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
     outputPath,
   ];
   await runFfmpeg(args);
@@ -113,17 +129,15 @@ async function renderSegment({
  * single-clip cases, so the main composition's filter graph never has to
  * know how many clips were actually in the rotation.
  *
- * This replaces the old approach of feeding every rotation clip into one
- * big ffmpeg filter_complex as simultaneous inputs (backgroundFilterGraph.js):
- * that opened N real video decoders for the entire video's duration, and N
- * scales with both clip-pool size and video length (planBackgroundSequence
- * cycles the pool to cover however long the video is) -- confirmed as the
- * cause of a real OOM (exceeded 2GB) on a 1080p, ~5-minute export with a
- * long rotation pool. Here, at most 2 clip decoders are ever open at once
- * (the previous clip's tail + this clip's head for one crossfade), and the
- * per-instance segments are joined with the concat demuxer -- a lossless
- * stream copy, not a re-encode, so total work stays proportional to video
- * length instead of re-encoding an ever-growing accumulator per instance.
+ * See renderSegment's doc comment for why this exists: a single long xfade
+ * chain (the original approach) measured ~3GB peak memory for a real
+ * 5-minute 1080p rotation regardless of input deduplication, since the
+ * memory cost is from buffering depth in a long dependent filter chain, not
+ * from how many real files are opened. This trades that memory ceiling for
+ * roughly double the total encoding time (the background gets encoded once
+ * here, then again as part of the main composition) -- an explicit,
+ * measured tradeoff, chosen so exports fit in 2GB rather than needing a
+ * bigger instance.
  */
 export async function renderBackgroundRotation({
   instances,

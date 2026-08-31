@@ -115,15 +115,25 @@ function composeVideo({ inputs, durationSeconds, outputPath, filterComplex, audi
 /**
  * Resolves the background: either a static placeholder image (default,
  * unchanged from steps 1-4) or a real rotating clip pool with crossfades,
- * when background.clipIds is non-empty. Either way, this always hands back
- * a single plain video input (`0:v`) for the rest of the graph to read from
- * -- a multi-clip rotation is pre-flattened to one file by
- * renderBackgroundRotation first, rather than feeding every clip into the
- * main filter graph as simultaneous inputs (the old approach, which opened
- * one real decoder per clip for the whole video's duration -- confirmed as
- * the cause of a real OOM on a long rotation pool at 1080p). The caller is
- * responsible for deleting the returned flattenedPath once the export is
- * done with it, when one is returned.
+ * when background.clipIds is non-empty. The multi-clip case is
+ * pre-flattened to a single video file by renderBackgroundRotation before
+ * the main composition ever runs.
+ *
+ * This was NOT the first thing tried: a single long xfade chain (one real
+ * ffmpeg input per instance, the original approach) measured ~3GB peak
+ * memory on a real 1080p ~5-minute export with a 5-clip pool cycled into 43
+ * instances. Deduplicating repeated clip inputs (opening each unique clip
+ * once, fanning out repeats via ffmpeg's own `split` filter) was tried next
+ * and made no measurable difference (~3GB either way, and crashed with
+ * "Cannot allocate memory" once) -- direct evidence that the cost is from
+ * FFmpeg buffering intermediate blend results while working through a long
+ * *sequential* xfade chain, not from how many real files are open.
+ * Pre-flattening breaks that one long chain into independent short pieces
+ * (see backgroundRotationRender.js), which avoids the deep-buffering cost
+ * entirely, at the real cost of a second encoding pass over the whole
+ * video's background footage -- a deliberate, measured tradeoff (roughly
+ * doubles background-related encode time) chosen so exports fit in 2GB
+ * instead of needing ~3-4GB.
  */
 async function resolveBackground({ background, totalDurationSeconds, canvasWidth, canvasHeight, tmpDir }) {
   const clipIds = background.clipIds ?? [];
