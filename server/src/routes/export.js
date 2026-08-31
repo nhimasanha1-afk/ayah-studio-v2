@@ -7,6 +7,7 @@ import { fetchChapter, fetchVerses, fetchReciterAudioFile } from '../lib/quranAp
 import { buildCaptionData } from '../lib/captionData.js';
 import { BACKGROUND_LIBRARY } from '../lib/backgroundLibrary.js';
 import { createJob, getJob, updateJob } from '../lib/jobQueue.js';
+import { cleanupOldOutputs } from '../lib/outputCleanup.js';
 
 const router = Router();
 
@@ -192,6 +193,12 @@ router.post('/surah/jobs', (req, res) => {
   const chapterId = Number(req.body?.chapterId ?? 112);
   const filename = `surah-${chapterId}-${Date.now()}.mp4`;
   const outputPath = path.join(outputDir, filename);
+
+  // Defensive sweep right before writing a new, potentially large (100MB+)
+  // file -- on top of the periodic sweep in index.js, so a burst of exports
+  // in quick succession can't outrun the hourly interval and hit "No space
+  // left on device" again.
+  cleanupOldOutputs(outputDir);
 
   const job = createJob();
   res.status(202).json({ jobId: job.id, status: job.status });
