@@ -157,9 +157,9 @@ export function buildFilterComplex({
   // while it's actually playing -- during the intro or outro card they'd
   // just be sitting there dimly visible under that window's own scrim, so
   // both are gated to only show in between: after the intro window ends and
-  // before the outro window starts (watermark and channel name badge are
-  // intentionally left alone here; only these two were reported as still
-  // showing over a card).
+  // before the outro window starts, and also gates the channel name badge
+  // below (confirmed report: the channel name was still showing over both
+  // the intro and outro cards).
   const hasIntro = Boolean(introWindow && introWindow.windowMs > 0);
   const hasOutro = Boolean(outroWindow && outroWindow.enabled && outroWindow.durationSec > 0);
   const introEndSec = hasIntro ? (introWindow.windowMs / 1000).toFixed(3) : null;
@@ -230,7 +230,7 @@ export function buildFilterComplex({
     const text = escapeDrawtextValue(style.badges.channelNameBadge.text);
     const out = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.channelNameBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}[${out}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.channelNameBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}${badgeVisibilityGate}[${out}]`
     );
     current = out;
   }

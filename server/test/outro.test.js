@@ -75,6 +75,32 @@ test('enabled outro hides the surah badge and channel logo once its window start
   assert.match(logoLine, /enable='lt\(t\\,13\.000\)'/);
 });
 
+test('enabled outro also hides the channel name badge once its window starts', () => {
+  const style = resolveStyle({ badges: { channelNameBadge: { enabled: true, text: 'My Channel' } } });
+  const outroWindow = { enabled: true, startSec: 13, durationSec: 4, line1: 'JazakAllah Khair', line2: '' };
+  const graph = buildFilterComplex({ ...baseArgs, style, outroWindow });
+
+  const channelNameLine = graph.split(';').find((part) => part.includes('My Channel'));
+  assert.match(channelNameLine, /enable='lt\(t\\,13\.000\)'/);
+});
+
+test('enabled intro also hides the channel name badge until its window ends', () => {
+  const style = resolveStyle({ badges: { channelNameBadge: { enabled: true, text: 'My Channel' } } });
+  const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false };
+  const graph = buildFilterComplex({ ...baseArgs, style, introWindow, outroWindow: undefined });
+
+  const channelNameLine = graph.split(';').find((part) => part.includes('My Channel'));
+  assert.match(channelNameLine, /enable='gte\(t\\,5\.000\)'\[v\d+\]$/);
+});
+
+test('no intro or outro -> the channel name badge renders with no enable gating at all', () => {
+  const style = resolveStyle({ badges: { channelNameBadge: { enabled: true, text: 'My Channel' } } });
+  const graph = buildFilterComplex({ ...baseArgs, style, outroWindow: undefined });
+
+  const channelNameLine = graph.split(';').find((part) => part.includes('My Channel'));
+  assert.ok(!channelNameLine.includes('enable='));
+});
+
 test('the arabic-transliteration surah badge variant hides both of its drawtext lines once the outro starts', () => {
   const style = resolveStyle({ badges: { surahBadge: { enabled: true, variant: 'arabic-transliteration' } } });
   const outroWindow = { enabled: true, startSec: 9, durationSec: 3, line1: 'Thanks', line2: '' };
