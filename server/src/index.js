@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import exportRouter from './routes/export.js';
 import uploadsRouter from './routes/uploads.js';
 import { OUTPUT_DIR, LOGO_UPLOADS_DIR, BACKGROUND_UPLOADS_DIR, CARD_IMAGE_UPLOADS_DIR, TMP_DIR } from './lib/paths.js';
-import { cleanupOldOutputs } from './lib/outputCleanup.js';
+import { cleanupOldOutputs, enforceOutputSizeCap } from './lib/outputCleanup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = OUTPUT_DIR;
@@ -28,9 +28,18 @@ fs.mkdirSync(tmpDir, { recursive: true });
 // on startup (so a redeploy immediately reclaims whatever's accumulated)
 // and again on an hourly interval thereafter.
 function sweepOldOutputs() {
-  const { deleted, freedBytes } = cleanupOldOutputs(outputDir);
-  if (deleted.length > 0) {
-    console.log(`[outputCleanup] deleted ${deleted.length} old export file(s), freed ${(freedBytes / 1024 / 1024).toFixed(1)}MB`);
+  const age = cleanupOldOutputs(outputDir);
+  if (age.deleted.length > 0) {
+    console.log(`[outputCleanup] deleted ${age.deleted.length} old export file(s), freed ${(age.freedBytes / 1024 / 1024).toFixed(1)}MB`);
+  }
+
+  // Age-based cleanup alone doesn't stop a rapid burst of exports (all well
+  // under the age threshold) from filling the disk -- confirmed via a real
+  // second "No space left on device" failure where every file involved was
+  // under 2 hours old. This is the backstop: cap total size regardless of age.
+  const size = enforceOutputSizeCap(outputDir);
+  if (size.deleted.length > 0) {
+    console.log(`[outputCleanup] size cap: deleted ${size.deleted.length} old export file(s), freed ${(size.freedBytes / 1024 / 1024).toFixed(1)}MB`);
   }
 }
 sweepOldOutputs();

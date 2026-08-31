@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { cleanupOldOutputs } from '../src/lib/outputCleanup.js';
+import { cleanupOldOutputs, enforceOutputSizeCap } from '../src/lib/outputCleanup.js';
 
 function withTempDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'outputcleanup-test-'));
@@ -76,4 +76,60 @@ test('nothing is deleted when everything is within the age limit', () => {
     const { deleted } = cleanupOldOutputs(dir, 2 * 60 * 60 * 1000);
     assert.deepEqual(deleted, []);
   });
+});
+
+// --- enforceOutputSizeCap: the actual gap age-based cleanup left open --
+// a burst of exports minutes apart (all well under any sane age threshold)
+// that together exceed the disk's real capacity. Confirmed in production:
+// a second "No space left on device" failure where every file involved was
+// under 2 hours old, so age-based cleanup correctly left them all alone.
+
+test('does nothing when total size is already under the cap', () => {
+  withTempDir((dir) => {
+    writeFileWithAge(dir, 'a.mp4', 5 * 60 * 1000, 'x'.repeat(100));
+    writeFileWithAge(dir, 'b.mp4', 1 * 60 * 1000, 'x'.repeat(100));
+    const { deleted, freedBytes } = enforceOutputSizeCap(dir, 1000);
+    assert.deepEqual(deleted, []);
+    assert.equal(freedBytes, 0);
+  });
+});
+
+test('deletes the OLDEST files first, regardless of age, until under the cap', () => {
+  withTempDir((dir) => {
+    // All three are "recent" by any age-based standard (minutes old), but
+    // together they exceed a small cap -- this is the exact burst scenario
+    // that broke production.
+    const oldest = writeFileWithAge(dir, 'oldest.mp4', 30 * 60 * 1000, 'x'.repeat(400));
+    const middle = writeFileWithAge(dir, 'middle.mp4', 20 * 60 * 1000, 'x'.repeat(400));
+    const newest = writeFileWithAge(dir, 'newest.mp4', 10 * 60 * 1000, 'x'.repeat(400));
+
+    const { deleted } = enforceOutputSizeCap(dir, 900);
+
+    // Total is 1200 bytes; must drop to <=900, so the single oldest file
+    // (400 bytes) is deleted, leaving 800 -- under the cap.
+    assert.deepEqual(deleted, ['oldest.mp4']);
+    assert.ok(!fs.existsSync(oldest));
+    assert.ok(fs.existsSync(middle));
+    assert.ok(fs.existsSync(newest));
+  });
+});
+
+test('deletes as many oldest files as needed, not just one, to get under the cap', () => {
+  withTempDir((dir) => {
+    writeFileWithAge(dir, 'a.mp4', 40 * 60 * 1000, 'x'.repeat(300));
+    writeFileWithAge(dir, 'b.mp4', 30 * 60 * 1000, 'x'.repeat(300));
+    writeFileWithAge(dir, 'c.mp4', 20 * 60 * 1000, 'x'.repeat(300));
+    const survivor = writeFileWithAge(dir, 'd.mp4', 10 * 60 * 1000, 'x'.repeat(300));
+
+    const { deleted, freedBytes } = enforceOutputSizeCap(dir, 300);
+
+    assert.deepEqual(deleted, ['a.mp4', 'b.mp4', 'c.mp4']);
+    assert.equal(freedBytes, 900);
+    assert.ok(fs.existsSync(survivor), 'the single newest file should survive since it alone fits the cap');
+  });
+});
+
+test('a missing/nonexistent directory is a harmless no-op for the size cap too', () => {
+  const result = enforceOutputSizeCap('/definitely/does/not/exist/anywhere', 1000);
+  assert.deepEqual(result, { deleted: [], freedBytes: 0 });
 });
