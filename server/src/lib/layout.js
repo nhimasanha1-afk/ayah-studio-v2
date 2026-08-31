@@ -85,14 +85,30 @@ const CAPTION_LAYOUT_FRACTIONS = {
   center: { alignment: 5, arabicMarginV: 260 / 720, translationMarginV: 140 / 720, scrimTop: 290 / 720, scrimHeight: 190 / 720 },
 };
 
-export function captionVerticalLayout(textPosition, canvasHeight) {
+/**
+ * scrimHeightScale grows/shrinks the scrim band around its original tuned
+ * center point (rather than just extending it downward), so resizing it
+ * doesn't drift away from the captions it's meant to sit behind. 1 = the
+ * original tuned size; callers that don't care about the scrim (assBuilder.js
+ * only wants alignment/marginV) can omit it entirely.
+ */
+export function captionVerticalLayout(textPosition, canvasHeight, scrimHeightScale = 1) {
   const f = CAPTION_LAYOUT_FRACTIONS[textPosition] ?? CAPTION_LAYOUT_FRACTIONS.center;
+  // Rounding happens only at the very end, on the raw (unrounded) height
+  // delta -- at the default scale of 1 that delta is exactly 0, so this
+  // reduces to the original Math.round(f.scrimTop * canvasHeight) with no
+  // drift at all, rather than accumulating a stray +/-1px from rounding
+  // scrimHeight first.
+  const baseScrimHeight = f.scrimHeight * canvasHeight;
+  const rawScrimHeight = baseScrimHeight * scrimHeightScale;
+  const scrimHeight = Math.round(rawScrimHeight);
+  const scrimTop = Math.round(f.scrimTop * canvasHeight - (rawScrimHeight - baseScrimHeight) / 2);
   return {
     alignment: f.alignment,
     arabicMarginV: Math.round(f.arabicMarginV * canvasHeight),
     translationMarginV: Math.round(f.translationMarginV * canvasHeight),
-    scrimTop: Math.round(f.scrimTop * canvasHeight),
-    scrimHeight: Math.round(f.scrimHeight * canvasHeight),
+    scrimTop,
+    scrimHeight,
   };
 }
 

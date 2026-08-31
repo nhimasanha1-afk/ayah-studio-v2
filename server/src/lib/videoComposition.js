@@ -80,7 +80,11 @@ export function buildFilterComplex({
   }
 
   if (style.colors.scrim.enabled) {
-    const { scrimTop, scrimHeight } = captionVerticalLayout(style.colors.textPosition, canvasHeight);
+    const { scrimTop, scrimHeight } = captionVerticalLayout(
+      style.colors.textPosition,
+      canvasHeight,
+      style.colors.scrim.heightScale ?? 1
+    );
     const color = hexToFfmpegColor(style.colors.scrim.color, style.colors.scrim.opacity);
     const out = nextLabel();
     parts.push(

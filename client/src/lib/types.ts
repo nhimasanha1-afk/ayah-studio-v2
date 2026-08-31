@@ -62,7 +62,7 @@ export interface StyleConfig {
     shadowDepth: number;
     textPosition: TextPosition;
     textRevealAnimation: TextRevealAnimation;
-    scrim: { enabled: boolean; color: string; opacity: number };
+    scrim: { enabled: boolean; color: string; opacity: number; heightScale: number };
     videoFilter: VideoFilter;
     backgroundBlur: number;
     backgroundZoomPan: ZoomPanStyle;
@@ -94,7 +94,7 @@ export const DEFAULT_STYLE: StyleConfig = {
     shadowDepth: 1,
     textPosition: 'center',
     textRevealAnimation: 'none',
-    scrim: { enabled: true, color: '#000000', opacity: 0.35 },
+    scrim: { enabled: true, color: '#000000', opacity: 0.35, heightScale: 1 },
     videoFilter: 'none',
     backgroundBlur: 0,
     backgroundZoomPan: 'none',

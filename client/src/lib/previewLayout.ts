@@ -7,19 +7,25 @@ const VIDEO_HEIGHT = 720;
 const PAD_PCT_X = (40 / VIDEO_WIDTH) * 100;
 const PAD_PCT_Y = (40 / VIDEO_HEIGHT) * 100;
 
-export function scrimStyle(textPosition: TextPosition): React.CSSProperties {
+// heightScale mirrors server/src/lib/layout.js's captionVerticalLayout:
+// grows/shrinks the band around its original tuned center point, rather
+// than just extending it downward, so resizing it doesn't drift away from
+// the captions it sits behind.
+export function scrimStyle(textPosition: TextPosition, heightScale = 1): React.CSSProperties {
   const bands: Record<TextPosition, { top: number; height: number }> = {
     'upper-third': { top: 30, height: 145 },
     center: { top: 290, height: 190 },
     'lower-third': { top: 545, height: 145 },
   };
   const band = bands[textPosition];
+  const height = band.height * heightScale;
+  const top = band.top - (height - band.height) / 2;
   return {
     position: 'absolute',
     left: `${(40 / VIDEO_WIDTH) * 100}%`,
     width: `${((VIDEO_WIDTH - 80) / VIDEO_WIDTH) * 100}%`,
-    top: `${(band.top / VIDEO_HEIGHT) * 100}%`,
-    height: `${(band.height / VIDEO_HEIGHT) * 100}%`,
+    top: `${(top / VIDEO_HEIGHT) * 100}%`,
+    height: `${(height / VIDEO_HEIGHT) * 100}%`,
   };
 }
 

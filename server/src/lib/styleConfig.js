@@ -71,7 +71,7 @@ export const DEFAULT_STYLE = {
     shadowDepth: 1,
     textPosition: 'center',
     textRevealAnimation: 'none',
-    scrim: { enabled: true, color: '#000000', opacity: 0.35 },
+    scrim: { enabled: true, color: '#000000', opacity: 0.35, heightScale: 1 },
     videoFilter: 'none',
     backgroundBlur: 0,
     backgroundZoomPan: 'none',
@@ -119,6 +119,13 @@ export function resolveStyle(overrides = {}) {
   assertOneOf(style.colors.backgroundZoomPan, ZOOM_PAN_STYLES, 'colors.backgroundZoomPan');
   if (typeof style.colors.backgroundBlur !== 'number' || style.colors.backgroundBlur < 0 || style.colors.backgroundBlur > 20) {
     throw new Error(`Invalid colors.backgroundBlur "${style.colors.backgroundBlur}". Must be a number 0-20.`);
+  }
+  if (
+    typeof style.colors.scrim.heightScale !== 'number' ||
+    style.colors.scrim.heightScale < 0.25 ||
+    style.colors.scrim.heightScale > 3
+  ) {
+    throw new Error(`Invalid colors.scrim.heightScale "${style.colors.scrim.heightScale}". Must be a number 0.25-3.`);
   }
   assertOneOf(style.badges.watermark.position, POSITIONS, 'badges.watermark.position');
   assertOneOf(style.badges.surahBadge.position, POSITIONS, 'badges.surahBadge.position');

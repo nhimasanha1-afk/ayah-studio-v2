@@ -56,6 +56,30 @@ test('captionVerticalLayout: same fractions carry correctly to a tall 9:16 canva
   assert.equal(layout.scrimTop, Math.round((290 / 720) * 1280));
 });
 
+test('captionVerticalLayout: heightScale of 1 (the default) is pixel-identical to omitting it entirely', () => {
+  const withDefault = captionVerticalLayout('center', 720);
+  const withExplicit1 = captionVerticalLayout('center', 720, 1);
+  assert.deepEqual(withExplicit1, withDefault);
+});
+
+test('captionVerticalLayout: heightScale grows/shrinks the scrim around its original center point, not just downward', () => {
+  const base = captionVerticalLayout('center', 720);
+  const bigger = captionVerticalLayout('center', 720, 2);
+  const smaller = captionVerticalLayout('center', 720, 0.5);
+
+  assert.equal(bigger.scrimHeight, Math.round(base.scrimHeight * 2));
+  assert.equal(smaller.scrimHeight, Math.round(base.scrimHeight * 0.5));
+
+  const baseCenter = base.scrimTop + base.scrimHeight / 2;
+  const biggerCenter = bigger.scrimTop + bigger.scrimHeight / 2;
+  const smallerCenter = smaller.scrimTop + smaller.scrimHeight / 2;
+  assert.ok(Math.abs(biggerCenter - baseCenter) <= 1, `expected center to stay put, got base=${baseCenter} bigger=${biggerCenter}`);
+  assert.ok(Math.abs(smallerCenter - baseCenter) <= 1, `expected center to stay put, got base=${baseCenter} smaller=${smallerCenter}`);
+
+  // A bigger scrim must actually start higher up (smaller top), not just grow downward.
+  assert.ok(bigger.scrimTop < base.scrimTop);
+});
+
 test('captionVerticalLayout falls back to center for an unrecognized value', () => {
   const fallback = captionVerticalLayout('nonsense', 720);
   const center = captionVerticalLayout('center', 720);

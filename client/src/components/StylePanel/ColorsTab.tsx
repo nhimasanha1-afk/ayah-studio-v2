@@ -83,6 +83,14 @@ export function ColorsTab() {
               step={0.05}
               onChange={(v) => setScrim({ opacity: v })}
             />
+            <NumberField
+              label="Scrim size"
+              value={colors.scrim.heightScale}
+              min={0.25}
+              max={3}
+              step={0.05}
+              onChange={(v) => setScrim({ heightScale: v })}
+            />
           </>
         )}
       </div>

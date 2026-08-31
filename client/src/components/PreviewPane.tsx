@@ -532,7 +532,7 @@ export function PreviewPane() {
 
         {/* Caption / intro / outro area */}
         {phase === 'verse' && (
-          <div style={scrimStyle(style.colors.textPosition)}>
+          <div style={scrimStyle(style.colors.textPosition, style.colors.scrim.heightScale)}>
             {style.colors.scrim.enabled && (
               <div
                 className="absolute inset-0"
