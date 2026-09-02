@@ -1,17 +1,31 @@
 import { useState } from 'react';
 import { TRANSITION_STYLES } from '../lib/types';
-import { useBackgroundLibrary } from '../lib/hooks';
+import { useBackgroundLibrary, usePreviewData } from '../lib/hooks';
 import { useExportConfigStore } from '../state/exportConfigStore';
+import { computeIntroTimingWindow } from '../lib/introTiming';
+import { instanceCountForDuration } from '../lib/backgroundRotation';
 import { BackgroundVideoGenerateField } from './fields/BackgroundVideoGenerateField';
 import { BackgroundVideoUploadField } from './fields/BackgroundVideoUploadField';
 import { NumberField } from './fields/NumberField';
 import { Panel } from './Panel';
 import { SelectField } from './SelectField';
 
+function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${String(rem).padStart(2, '0')}`;
+}
+
 export function BackgroundPanel() {
   const library = useBackgroundLibrary();
   const background = useExportConfigStore((s) => s.background);
   const uploadedBackgroundClips = useExportConfigStore((s) => s.uploadedBackgroundClips);
+  const chapterId = useExportConfigStore((s) => s.chapterId);
+  const reciterId = useExportConfigStore((s) => s.reciterId);
+  const translationId = useExportConfigStore((s) => s.translationId);
+  const intro = useExportConfigStore((s) => s.intro);
+  const outro = useExportConfigStore((s) => s.outro);
   const setBackgroundOrder = useExportConfigStore((s) => s.setBackgroundOrder);
   const setBackgroundTiming = useExportConfigStore((s) => s.setBackgroundTiming);
   const toggleClipInPool = useExportConfigStore((s) => s.toggleClipInPool);
@@ -22,6 +36,28 @@ export function BackgroundPanel() {
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Real, currently-selected-chapter duration estimate -- same inputs
+  // PreviewPane uses for its own timeline (verse timing data + the
+  // intro/outro window rules), so "how many clips will this need" reflects
+  // the actual chapter/reciter picked, not a generic guess.
+  const preview = usePreviewData(chapterId, reciterId, translationId);
+  const verses = preview.data?.verses ?? [];
+  const mainDurationMs = verses.length > 0 ? verses[verses.length - 1].endMs : 0;
+  const introWindowMs = computeIntroTimingWindow({
+    introCardEnabled: intro.introCardEnabled,
+    bismillahTextEnabled: intro.bismillahTextEnabled,
+    bismillahAudioEnabled: intro.bismillahAudioEnabled,
+    bismillahAudioDurationMs: preview.data?.bismillahAudioDurationMs,
+    introCardDurationMs: intro.introCardDurationMs,
+  }).windowMs;
+  const outroWindowMs = outro.enabled ? outro.durationMs : 0;
+  const estimatedTotalDurationSeconds = (introWindowMs + mainDurationMs + outroWindowMs) / 1000;
+  const estimatedInstanceCount = instanceCountForDuration(
+    estimatedTotalDurationSeconds,
+    background.slotDurationSeconds,
+    background.transitionDurationSeconds
+  );
 
   // Checking a clip in also previews it immediately, so you can see what it
   // looks like before committing to it -- unchecking just removes it as
@@ -200,7 +236,7 @@ export function BackgroundPanel() {
           label="Clip display duration (s)"
           value={background.slotDurationSeconds}
           min={3}
-          max={20}
+          max={30}
           onChange={(v) => setBackgroundTiming({ slotDurationSeconds: v })}
         />
         <NumberField
@@ -223,6 +259,16 @@ export function BackgroundPanel() {
             </option>
           ))}
         </SelectField>
+
+        {background.clipIds.length > 0 && estimatedTotalDurationSeconds > 0 && (
+          <p className="text-xs text-neutral-500">
+            This chapter (~{formatDuration(estimatedTotalDurationSeconds)}) will cycle through about{' '}
+            <span className="font-medium text-neutral-300">{estimatedInstanceCount}</span> background clip
+            {estimatedInstanceCount === 1 ? '' : 's'} total -- your {background.clipIds.length} selected clip
+            {background.clipIds.length === 1 ? '' : 's'} will repeat about{' '}
+            {(estimatedInstanceCount / background.clipIds.length).toFixed(1)}x each.
+          </p>
+        )}
       </div>
     </Panel>
   );
