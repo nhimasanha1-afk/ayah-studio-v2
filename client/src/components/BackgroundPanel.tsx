@@ -43,7 +43,11 @@ export function BackgroundPanel() {
   // the actual chapter/reciter picked, not a generic guess.
   const preview = usePreviewData(chapterId, reciterId, translationId);
   const verses = preview.data?.verses ?? [];
-  const mainDurationMs = verses.length > 0 ? verses[verses.length - 1].endMs : 0;
+  // Not just the last array entry's endMs -- that specific verse could have
+  // missing/estimated timing (endMs: null), so scan backward for the last
+  // verse that actually has real timing data.
+  const lastTimedVerse = [...verses].reverse().find((v) => v.endMs != null);
+  const mainDurationMs = lastTimedVerse?.endMs ?? 0;
   const introWindowMs = computeIntroTimingWindow({
     introCardEnabled: intro.introCardEnabled,
     bismillahTextEnabled: intro.bismillahTextEnabled,
