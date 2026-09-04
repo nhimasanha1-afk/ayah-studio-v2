@@ -405,6 +405,12 @@ export async function runSurahExport({
     overlayOpacity: introOverlayOpacity,
   };
 
+  // Badge/card text (surah names, channel name, custom card text) is
+  // written to temp files rather than embedded as a `text=` value -- see
+  // videoComposition.js's textFileArg for why (a real crash on a surah name
+  // starting with an apostrophe, "'Abasa"). Collected here so they can be
+  // deleted once the render finishes, same as the flattened background.
+  const drawtextTempFiles = [];
   const videoFilterComplex = buildFilterComplex({
     style,
     assPath,
@@ -424,6 +430,8 @@ export async function runSurahExport({
     canvasHeight,
     scaleFactor,
     totalDurationSeconds,
+    tmpDir: TMP_DIR,
+    tempFiles: drawtextTempFiles,
   });
 
   const { audioFilterParts, audioOutLabel } = buildAudioFilterComplex({
@@ -465,6 +473,7 @@ export async function runSurahExport({
     // -- worth cleaning up explicitly rather than letting it accumulate
     // across exports.
     if (backgroundFlattenedPath) fs.rmSync(backgroundFlattenedPath, { force: true });
+    for (const filePath of drawtextTempFiles) fs.rmSync(filePath, { force: true });
   }
 
   const srtPath = outputPath.replace(/\.mp4$/, '.srt');

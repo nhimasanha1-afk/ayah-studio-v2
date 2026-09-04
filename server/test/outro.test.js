@@ -1,7 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { buildFilterComplex } from '../src/lib/videoComposition.js';
 import { resolveStyle } from '../src/lib/styleConfig.js';
+
+// Dynamic drawtext text is now written to a temp file and referenced via
+// textfile=, not embedded directly as text='...' (see videoComposition.js's
+// textFileArg) -- so tests that need to find "the segment drawing this
+// text" or "what text does this segment draw" go through the real file on
+// disk rather than string-matching the graph itself.
+function readDrawtextFile(segment) {
+  const match = segment?.match(/textfile='([^']*)'/);
+  if (!match) return null;
+  return fs.readFileSync(match[1].replace(/\\:/g, ':'), 'utf8');
+}
+
+function findSegmentByText(graph, text) {
+  return graph.split(';').find((part) => readDrawtextFile(part)?.includes(text));
+}
 
 const baseArgs = {
   style: resolveStyle(),
@@ -33,7 +49,8 @@ test('enabled outro adds a time-gated full-frame scrim and centered text, and st
   const outroWindow = { enabled: true, startSec: 13, durationSec: 4, line1: 'JazakAllah Khair', line2: '' };
   const graph = buildFilterComplex({ ...baseArgs, outroWindow });
   assert.match(graph, /drawbox=x=0:y=0:w=1280:h=720:color=[^:]+:t=fill:enable='gte\(t\\,13\.000\)'/);
-  assert.match(graph, /drawtext=fontfile='[^']*':text='JazakAllah Khair':.*enable='gte\(t\\,13\.000\)'/);
+  const textSegment = findSegmentByText(graph, 'JazakAllah Khair');
+  assert.match(textSegment, /enable='gte\(t\\,13\.000\)'/);
   assert.ok(graph.endsWith('[vout]'));
 });
 
@@ -52,7 +69,8 @@ test('outro overlay opacity is user-adjustable, not hardcoded', () => {
 test('outro with both lines joins them with a newline in the drawtext', () => {
   const outroWindow = { enabled: true, startSec: 10, durationSec: 3, line1: 'Thank you', line2: 'Subscribe for more' };
   const graph = buildFilterComplex({ ...baseArgs, outroWindow });
-  assert.match(graph, /text='Thank you\nSubscribe for more'/);
+  const segment = findSegmentByText(graph, 'Thank you\nSubscribe for more');
+  assert.ok(segment, 'expected a drawtext segment whose text file contains both lines joined by a newline');
 });
 
 test('outro is drawn after the logo overlay, on top of it', () => {
@@ -68,7 +86,7 @@ test('enabled outro hides the surah badge and channel logo once its window start
   const outroWindow = { enabled: true, startSec: 13, durationSec: 4, line1: 'JazakAllah Khair', line2: '' };
   const graph = buildFilterComplex({ ...baseArgs, style, outroWindow, logoInputLabel: '3:v' });
 
-  const surahBadgeLine = graph.split(';').find((part) => part.includes('Al-Ikhlas'));
+  const surahBadgeLine = findSegmentByText(graph, 'Al-Ikhlas');
   assert.match(surahBadgeLine, /enable='lt\(t\\,13\.000\)'/);
 
   const logoLine = graph.split(';').find((part) => part.startsWith('[3:v]') === false && part.includes('overlay=x='));
@@ -80,7 +98,7 @@ test('enabled outro also hides the channel name badge once its window starts', (
   const outroWindow = { enabled: true, startSec: 13, durationSec: 4, line1: 'JazakAllah Khair', line2: '' };
   const graph = buildFilterComplex({ ...baseArgs, style, outroWindow });
 
-  const channelNameLine = graph.split(';').find((part) => part.includes('My Channel'));
+  const channelNameLine = findSegmentByText(graph, 'My Channel');
   assert.match(channelNameLine, /enable='lt\(t\\,13\.000\)'/);
 });
 
@@ -89,7 +107,7 @@ test('enabled intro also hides the channel name badge until its window ends', ()
   const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false };
   const graph = buildFilterComplex({ ...baseArgs, style, introWindow, outroWindow: undefined });
 
-  const channelNameLine = graph.split(';').find((part) => part.includes('My Channel'));
+  const channelNameLine = findSegmentByText(graph, 'My Channel');
   assert.match(channelNameLine, /enable='gte\(t\\,5\.000\)'\[v\d+\]$/);
 });
 
@@ -97,7 +115,7 @@ test('no intro or outro -> the channel name badge renders with no enable gating 
   const style = resolveStyle({ badges: { channelNameBadge: { enabled: true, text: 'My Channel' } } });
   const graph = buildFilterComplex({ ...baseArgs, style, outroWindow: undefined });
 
-  const channelNameLine = graph.split(';').find((part) => part.includes('My Channel'));
+  const channelNameLine = findSegmentByText(graph, 'My Channel');
   assert.ok(!channelNameLine.includes('enable='));
 });
 
@@ -107,9 +125,9 @@ test('the arabic-transliteration surah badge variant hides both of its drawtext 
   const surahBadgeText = { ...baseArgs.surahBadgeText, arabicName: 'الإخلاص' };
   const graph = buildFilterComplex({ ...baseArgs, style, outroWindow, surahBadgeText });
 
-  const badgeLines = graph.split(';').filter((part) => part.includes('الإخلاص') || part.includes('Al-Ikhlas'));
-  assert.equal(badgeLines.length, 2);
+  const badgeLines = [findSegmentByText(graph, 'الإخلاص'), findSegmentByText(graph, 'Al-Ikhlas')];
   for (const line of badgeLines) {
+    assert.ok(line, 'expected to find a drawtext segment for this badge line');
     assert.match(line, /enable='lt\(t\\,9\.000\)'/);
   }
 });
@@ -118,7 +136,7 @@ test('no outro -> the surah badge and logo render with no enable gating at all',
   const style = resolveStyle({ badges: { surahBadge: { enabled: true } } });
   const graph = buildFilterComplex({ ...baseArgs, style, outroWindow: undefined, logoInputLabel: '3:v' });
 
-  const surahBadgeLine = graph.split(';').find((part) => part.includes('Al-Ikhlas'));
+  const surahBadgeLine = findSegmentByText(graph, 'Al-Ikhlas');
   assert.ok(!surahBadgeLine.includes('enable='));
 
   const logoLine = graph.split(';').find((part) => part.includes('overlay=x=') && !part.startsWith('[3:v]'));
@@ -143,7 +161,7 @@ test('with both an intro and an outro, the surah badge and logo only show in bet
   const outroWindow = { enabled: true, startSec: 20, durationSec: 4, line1: 'Thanks', line2: '' };
   const graph = buildFilterComplex({ ...baseArgs, style, introWindow, outroWindow, logoInputLabel: '3:v' });
 
-  const surahBadgeLine = graph.split(';').find((part) => part.includes('Al-Ikhlas'));
+  const surahBadgeLine = findSegmentByText(graph, 'Al-Ikhlas');
   assert.match(surahBadgeLine, /enable='gte\(t\\,5\.000\)\*lt\(t\\,20\.000\)'/);
 
   const logoLine = graph.split(';').find((part) => part.includes('overlay=x=') && !part.startsWith('[3:v]'));
@@ -155,6 +173,6 @@ test('with an intro but no outro, the surah badge only shows after the intro win
   const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false };
   const graph = buildFilterComplex({ ...baseArgs, style, introWindow, outroWindow: undefined });
 
-  const surahBadgeLine = graph.split(';').find((part) => part.includes('Al-Ikhlas'));
+  const surahBadgeLine = findSegmentByText(graph, 'Al-Ikhlas');
   assert.match(surahBadgeLine, /enable='gte\(t\\,5\.000\)'\[v\d+\]$/);
 });

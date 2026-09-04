@@ -1,13 +1,38 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { hexToFfmpegColor } from './colorUtils.js';
 import { captionVerticalLayout, drawtextPositionExpr, overlayPositionExpr, introTextY, getPad } from './layout.js';
-import { escapeForFilter, escapeForDrawtextPath, escapeDrawtextValue } from './filterPath.js';
+import { escapeForFilter, escapeForDrawtextPath } from './filterPath.js';
 import { FONT_REGISTRY } from './styleConfig.js';
 import { logoMaskAlphaExpr } from './channelLogo.js';
 import { videoFilterExpr, blurFilterExpr, zoomPanFilterExpr } from './backgroundEffects.js';
 
 function fontFilePath(fontsDir, bucket, key) {
   return path.join(fontsDir, FONT_REGISTRY[bucket][key].file);
+}
+
+/**
+ * Writes text to a temp file and returns a ready-to-embed `textfile='...'`
+ * drawtext argument, instead of a `text='...'` value needing its own
+ * escaping. Confirmed via direct testing that FFmpeg's filtergraph escaping
+ * for a literal apostrophe inside a quoted text= value is unreliable: a
+ * leading or mid-string apostrophe (`\'`, doubled `''`, or the shell-style
+ * `'\''` trick) either gets silently dropped or desyncs the parser's
+ * quote-tracking badly enough to corrupt every filter that follows in the
+ * same filter_complex string -- confirmed as the real cause of a production
+ * crash on a surah whose transliterated name starts with one ("'Abasa").
+ * Reading from a file sidesteps text-value escaping entirely; only the file
+ * PATH needs escaping (colons), which escapeForDrawtextPath already
+ * handles reliably. Callers should collect the returned path into their own
+ * list and delete it once the export finishes (see surahExport.js).
+ */
+function textFileArg(text, tmpDir, tempFiles) {
+  const filePath = path.join(tmpDir, `drawtext-${randomUUID()}.txt`);
+  fs.writeFileSync(filePath, text, 'utf8');
+  tempFiles.push(filePath);
+  return `textfile='${escapeForDrawtextPath(filePath)}'`;
 }
 
 /**
@@ -55,11 +80,17 @@ export function buildFilterComplex({
   canvasHeight,
   scaleFactor = 1,
   totalDurationSeconds,
+  // Defaults keep this usable from tests/callers that don't care about
+  // cleanup; a real export passes its own TMP_DIR and array so the temp
+  // text files can be deleted once the render finishes (see surahExport.js).
+  tmpDir = os.tmpdir(),
+  tempFiles = [],
 }) {
   const parts = [];
   let current = backgroundInputLabel;
   let counter = 0;
   const nextLabel = () => `v${counter++}`;
+  const textFile = (text) => textFileArg(text, tmpDir, tempFiles);
   const latinFontPath = escapeForDrawtextPath(fontFilePath(fontsDir, 'latin', style.typography.latinFont));
   const arabicFontPath = escapeForDrawtextPath(fontFilePath(fontsDir, 'arabic', style.typography.arabicFont));
   const pad = getPad(scaleFactor);
@@ -123,20 +154,18 @@ export function buildFilterComplex({
 
     if (introWindow.showBismillahText) {
       const arabicColor = hexToFfmpegColor(style.colors.arabicTextColor);
-      const text = escapeDrawtextValue(introWindow.bismillahText);
       const out = nextLabel();
       parts.push(
-        `[${current}]drawtext=fontfile='${arabicFontPath}':text='${text}':fontsize=${scaled(style.typography.arabicFontSize)}:fontcolor=${arabicColor}:borderw=${scaled(2)}:bordercolor=black:x=(w-text_w)/2:y=${y}:enable='${enable}'[${out}]`
+        `[${current}]drawtext=fontfile='${arabicFontPath}':${textFile(introWindow.bismillahText)}:fontsize=${scaled(style.typography.arabicFontSize)}:fontcolor=${arabicColor}:borderw=${scaled(2)}:bordercolor=black:x=(w-text_w)/2:y=${y}:enable='${enable}'[${out}]`
       );
       current = out;
     }
 
     if (introWindow.showIntroCard) {
       const cardY = Math.max(pad, y - scaled(170));
-      const text = escapeDrawtextValue(`${introWindow.cardText.line1}\n${introWindow.cardText.line2}`);
       const out = nextLabel();
       parts.push(
-        `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(30)}:fontcolor=white:x=(w-text_w)/2:y=${cardY}:line_spacing=${scaled(10)}:box=1:boxcolor=0x00000099:boxborderw=${scaled(20)}:enable='${enable}'[${out}]`
+        `[${current}]drawtext=fontfile='${latinFontPath}':${textFile(`${introWindow.cardText.line1}\n${introWindow.cardText.line2}`)}:fontsize=${scaled(30)}:fontcolor=white:x=(w-text_w)/2:y=${cardY}:line_spacing=${scaled(10)}:box=1:boxcolor=0x00000099:boxborderw=${scaled(20)}:enable='${enable}'[${out}]`
       );
       current = out;
     }
@@ -145,10 +174,9 @@ export function buildFilterComplex({
   if (style.badges.watermark.enabled && style.badges.watermark.text) {
     const { x, y } = drawtextPositionExpr(style.badges.watermark.position, scaleFactor);
     const color = hexToFfmpegColor(style.badges.watermark.color, style.badges.watermark.opacity);
-    const text = escapeDrawtextValue(style.badges.watermark.text);
     const out = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.watermark.fontSize)}:fontcolor=${color}:x=${x}:y=${y}[${out}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':${textFile(style.badges.watermark.text)}:fontsize=${scaled(style.badges.watermark.fontSize)}:fontcolor=${color}:x=${x}:y=${y}[${out}]`
     );
     current = out;
   }
@@ -195,42 +223,36 @@ export function buildFilterComplex({
     const arabicY = isBottom ? `h-${arabicLineHeight + lineGap + translitLineHeight}-${pad}` : `${topY}`;
     const translitY = isBottom ? `h-${translitLineHeight}-${pad}` : `${topY}+${arabicLineHeight + lineGap}`;
 
-    const arabicText = escapeDrawtextValue(surahBadgeText.arabicName);
-    const translitText = escapeDrawtextValue(surahBadgeText.line1);
-
     const arabicOut = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${arabicFontPath}':text='${arabicText}':fontsize=${arabicFontSize}:fontcolor=white:x=${x}:y=${arabicY}${badgeVisibilityGate}[${arabicOut}]`
+      `[${current}]drawtext=fontfile='${arabicFontPath}':${textFile(surahBadgeText.arabicName)}:fontsize=${arabicFontSize}:fontcolor=white:x=${x}:y=${arabicY}${badgeVisibilityGate}[${arabicOut}]`
     );
     current = arabicOut;
 
     const translitOut = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${translitText}':fontsize=${translitFontSize}:fontcolor=white:x=${x}:y=${translitY}${badgeVisibilityGate}[${translitOut}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':${textFile(surahBadgeText.line1)}:fontsize=${translitFontSize}:fontcolor=white:x=${x}:y=${translitY}${badgeVisibilityGate}[${translitOut}]`
     );
     current = translitOut;
   } else if (style.badges.surahBadge.enabled) {
     const { x, y } = drawtextPositionExpr(style.badges.surahBadge.position, scaleFactor);
     const isStacked = style.badges.surahBadge.variant === 'stacked-title-card';
-    const text = escapeDrawtextValue(
-      isStacked
-        ? `${surahBadgeText.line1}\n${surahBadgeText.line2}`
-        : `${surahBadgeText.line1} • ${surahBadgeText.line2}`
-    );
+    const text = isStacked
+      ? `${surahBadgeText.line1}\n${surahBadgeText.line2}`
+      : `${surahBadgeText.line1} • ${surahBadgeText.line2}`;
     const boxOpt = isStacked ? `:box=1:boxcolor=0x00000099:boxborderw=${scaled(18)}` : '';
     const out = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.surahBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}:line_spacing=${scaled(8)}${boxOpt}${badgeVisibilityGate}[${out}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':${textFile(text)}:fontsize=${scaled(style.badges.surahBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}:line_spacing=${scaled(8)}${boxOpt}${badgeVisibilityGate}[${out}]`
     );
     current = out;
   }
 
   if (style.badges.channelNameBadge.enabled && style.badges.channelNameBadge.text) {
     const { x, y } = drawtextPositionExpr(style.badges.channelNameBadge.position, scaleFactor);
-    const text = escapeDrawtextValue(style.badges.channelNameBadge.text);
     const out = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(style.badges.channelNameBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}${badgeVisibilityGate}[${out}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':${textFile(style.badges.channelNameBadge.text)}:fontsize=${scaled(style.badges.channelNameBadge.fontSize)}:fontcolor=white:x=${x}:y=${y}${badgeVisibilityGate}[${out}]`
     );
     current = out;
   }
@@ -277,10 +299,10 @@ export function buildFilterComplex({
     );
     current = scrimOut;
 
-    const text = escapeDrawtextValue([outroWindow.line1, outroWindow.line2].filter(Boolean).join('\n'));
+    const text = [outroWindow.line1, outroWindow.line2].filter(Boolean).join('\n');
     const textOut = nextLabel();
     parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':text='${text}':fontsize=${scaled(34)}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=${scaled(12)}:enable='${enable}'[${textOut}]`
+      `[${current}]drawtext=fontfile='${latinFontPath}':${textFile(text)}:fontsize=${scaled(34)}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=${scaled(12)}:enable='${enable}'[${textOut}]`
     );
     current = textOut;
   }

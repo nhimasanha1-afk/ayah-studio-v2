@@ -17,8 +17,3 @@ export function escapeForFilter(filePath) {
 export function escapeForDrawtextPath(filePath) {
   return filePath.replace(/\\/g, '/').replace(/:/g, '\\:');
 }
-
-/** Escapes literal text for use inside a quoted drawtext text='...' value. */
-export function escapeDrawtextValue(text) {
-  return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/%/g, '\\%');
-}
