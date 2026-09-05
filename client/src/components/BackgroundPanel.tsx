@@ -17,6 +17,13 @@ function formatDuration(totalSeconds: number): string {
   return `${m}:${String(rem).padStart(2, '0')}`;
 }
 
+// Common real-world clip lengths (many stock/AI-generated background clips
+// come in these) -- shown as a quick reference alongside the live estimate
+// for whatever "Clip display duration" is currently set to, so switching
+// between e.g. 20s and 30s source clips doesn't require moving the slider
+// back and forth just to compare counts.
+const REFERENCE_CLIP_LENGTHS_SECONDS = [10, 15, 20, 30];
+
 export function BackgroundPanel() {
   const library = useBackgroundLibrary();
   const background = useExportConfigStore((s) => s.background);
@@ -265,13 +272,36 @@ export function BackgroundPanel() {
         </SelectField>
 
         {background.clipIds.length > 0 && estimatedTotalDurationSeconds > 0 && (
-          <p className="text-xs text-neutral-500">
-            This chapter (~{formatDuration(estimatedTotalDurationSeconds)}) will cycle through about{' '}
-            <span className="font-medium text-neutral-300">{estimatedInstanceCount}</span> background clip
-            {estimatedInstanceCount === 1 ? '' : 's'} total -- your {background.clipIds.length} selected clip
-            {background.clipIds.length === 1 ? '' : 's'} will repeat about{' '}
-            {(estimatedInstanceCount / background.clipIds.length).toFixed(1)}x each.
-          </p>
+          <div className="space-y-2">
+            <p className="text-xs text-neutral-500">
+              This chapter (~{formatDuration(estimatedTotalDurationSeconds)}) will cycle through about{' '}
+              <span className="font-medium text-neutral-300">{estimatedInstanceCount}</span> background clip
+              {estimatedInstanceCount === 1 ? '' : 's'} total -- your {background.clipIds.length} selected clip
+              {background.clipIds.length === 1 ? '' : 's'} will repeat about{' '}
+              {(estimatedInstanceCount / background.clipIds.length).toFixed(1)}x each.
+            </p>
+
+            <div className="rounded-md bg-neutral-800/50 p-2">
+              <span className="text-[11px] font-medium text-neutral-400">
+                Clips needed by length, for this chapter
+              </span>
+              <ul className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-neutral-300">
+                {REFERENCE_CLIP_LENGTHS_SECONDS.map((lengthSeconds) => {
+                  const count = instanceCountForDuration(
+                    estimatedTotalDurationSeconds,
+                    lengthSeconds,
+                    background.transitionDurationSeconds
+                  );
+                  return (
+                    <li key={lengthSeconds} className="flex justify-between">
+                      <span>{lengthSeconds}s clips</span>
+                      <span className="font-medium text-neutral-200">~{count}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
         )}
       </div>
     </Panel>

@@ -171,23 +171,13 @@ export function buildFilterComplex({
     }
   }
 
-  if (style.badges.watermark.enabled && style.badges.watermark.text) {
-    const { x, y } = drawtextPositionExpr(style.badges.watermark.position, scaleFactor);
-    const color = hexToFfmpegColor(style.badges.watermark.color, style.badges.watermark.opacity);
-    const out = nextLabel();
-    parts.push(
-      `[${current}]drawtext=fontfile='${latinFontPath}':${textFile(style.badges.watermark.text)}:fontsize=${scaled(style.badges.watermark.fontSize)}:fontcolor=${color}:x=${x}:y=${y}[${out}]`
-    );
-    current = out;
-  }
-
-  // The surah badge and channel logo are meant to identify the recitation
-  // while it's actually playing -- during the intro or outro card they'd
-  // just be sitting there dimly visible under that window's own scrim, so
-  // both are gated to only show in between: after the intro window ends and
-  // before the outro window starts, and also gates the channel name badge
-  // below (confirmed report: the channel name was still showing over both
-  // the intro and outro cards).
+  // The surah badge, channel logo, channel name badge, and watermark are all
+  // meant to identify the recitation while it's actually playing -- during
+  // the intro or outro card they'd just be sitting there dimly visible under
+  // that window's own scrim, so all four are gated to only show in between:
+  // after the intro window ends and before the outro window starts
+  // (confirmed reports: the channel name and the watermark were both still
+  // showing over the intro/outro cards).
   const hasIntro = Boolean(introWindow && introWindow.windowMs > 0);
   const hasOutro = Boolean(outroWindow && outroWindow.enabled && outroWindow.durationSec > 0);
   const introEndSec = hasIntro ? (introWindow.windowMs / 1000).toFixed(3) : null;
@@ -200,6 +190,16 @@ export function buildFilterComplex({
         : hasOutro
           ? `:enable='lt(t\\,${outroStartSec})'`
           : '';
+
+  if (style.badges.watermark.enabled && style.badges.watermark.text) {
+    const { x, y } = drawtextPositionExpr(style.badges.watermark.position, scaleFactor);
+    const color = hexToFfmpegColor(style.badges.watermark.color, style.badges.watermark.opacity);
+    const out = nextLabel();
+    parts.push(
+      `[${current}]drawtext=fontfile='${latinFontPath}':${textFile(style.badges.watermark.text)}:fontsize=${scaled(style.badges.watermark.fontSize)}:fontcolor=${color}:x=${x}:y=${y}${badgeVisibilityGate}[${out}]`
+    );
+    current = out;
+  }
 
   if (style.badges.surahBadge.enabled && style.badges.surahBadge.variant === 'arabic-transliteration') {
     // Two separate drawtext calls, not one two-line block: the Arabic name

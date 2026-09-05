@@ -102,6 +102,32 @@ test('enabled outro also hides the channel name badge once its window starts', (
   assert.match(channelNameLine, /enable='lt\(t\\,13\.000\)'/);
 });
 
+test('enabled outro also hides the watermark once its window starts', () => {
+  const style = resolveStyle({ badges: { watermark: { enabled: true, text: 'MyChannel.com' } } });
+  const outroWindow = { enabled: true, startSec: 13, durationSec: 4, line1: 'JazakAllah Khair', line2: '' };
+  const graph = buildFilterComplex({ ...baseArgs, style, outroWindow });
+
+  const watermarkLine = findSegmentByText(graph, 'MyChannel.com');
+  assert.match(watermarkLine, /enable='lt\(t\\,13\.000\)'/);
+});
+
+test('enabled intro also hides the watermark until its window ends', () => {
+  const style = resolveStyle({ badges: { watermark: { enabled: true, text: 'MyChannel.com' } } });
+  const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false };
+  const graph = buildFilterComplex({ ...baseArgs, style, introWindow, outroWindow: undefined });
+
+  const watermarkLine = findSegmentByText(graph, 'MyChannel.com');
+  assert.match(watermarkLine, /enable='gte\(t\\,5\.000\)'\[v\d+\]$/);
+});
+
+test('no intro or outro -> the watermark renders with no enable gating at all', () => {
+  const style = resolveStyle({ badges: { watermark: { enabled: true, text: 'MyChannel.com' } } });
+  const graph = buildFilterComplex({ ...baseArgs, style, outroWindow: undefined });
+
+  const watermarkLine = findSegmentByText(graph, 'MyChannel.com');
+  assert.ok(!watermarkLine.includes('enable='));
+});
+
 test('enabled intro also hides the channel name badge until its window ends', () => {
   const style = resolveStyle({ badges: { channelNameBadge: { enabled: true, text: 'My Channel' } } });
   const introWindow = { windowMs: 5000, showBismillahText: true, bismillahText: 'text', showIntroCard: false };
