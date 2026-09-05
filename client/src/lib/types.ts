@@ -13,7 +13,7 @@ export type BadgePosition =
 export type TextPosition = 'upper-third' | 'center' | 'lower-third';
 export type LogoShape = 'square' | 'circle' | 'rounded';
 export type SurahBadgeVariant = 'inline' | 'stacked-title-card' | 'arabic-transliteration';
-export type Resolution = '720p' | '1080p';
+export type Resolution = '720p' | '1080p' | '4k';
 export type AspectRatio = '16:9' | '9:16';
 export type TextRevealAnimation = 'none' | 'fade';
 export type VideoFilter = 'none' | 'grayscale' | 'sepia' | 'warm' | 'cool' | 'vintage';
@@ -28,7 +28,7 @@ export type TransitionStyle =
   | 'circleopen'
   | 'pixelize';
 
-export const RESOLUTIONS: Resolution[] = ['720p', '1080p'];
+export const RESOLUTIONS: Resolution[] = ['720p', '1080p', '4k'];
 export const ASPECT_RATIOS: AspectRatio[] = ['16:9', '9:16'];
 export type BackgroundOrder = 'sequential' | 'shuffle';
 export const TEXT_REVEAL_ANIMATIONS: TextRevealAnimation[] = ['none', 'fade'];

@@ -8,6 +8,7 @@ import { buildCaptionData } from '../lib/captionData.js';
 import { BACKGROUND_LIBRARY } from '../lib/backgroundLibrary.js';
 import { createJob, getJob, updateJob } from '../lib/jobQueue.js';
 import { cleanupOldOutputs, enforceOutputSizeCap } from '../lib/outputCleanup.js';
+import { checkResolutionMemoryRequirement } from '../lib/resourceGuard.js';
 
 const router = Router();
 
@@ -171,6 +172,11 @@ function formatSurahResult(result, filename) {
 // exports should use the job-based endpoints below instead, since this one
 // blocks the request for the full render.
 router.post('/surah', async (req, res) => {
+  const memCheck = checkResolutionMemoryRequirement(req.body?.resolution ?? '720p');
+  if (!memCheck.ok) {
+    return res.status(400).json({ success: false, error: memCheck.error });
+  }
+
   const outputDir = req.app.locals.outputDir;
   const chapterId = Number(req.body?.chapterId ?? 112);
   const filename = `surah-${chapterId}-${Date.now()}.mp4`;
@@ -189,6 +195,11 @@ router.post('/surah', async (req, res) => {
 // for real-world-length exports so the request doesn't have to stay open
 // for the whole render.
 router.post('/surah/jobs', (req, res) => {
+  const memCheck = checkResolutionMemoryRequirement(req.body?.resolution ?? '720p');
+  if (!memCheck.ok) {
+    return res.status(400).json({ error: memCheck.error });
+  }
+
   const outputDir = req.app.locals.outputDir;
   const chapterId = Number(req.body?.chapterId ?? 112);
   const filename = `surah-${chapterId}-${Date.now()}.mp4`;

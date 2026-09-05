@@ -1,9 +1,17 @@
-export const RESOLUTIONS = ['720p', '1080p'];
+export const RESOLUTIONS = ['720p', '1080p', '4k'];
 export const ASPECT_RATIOS = ['16:9', '9:16'];
 
 const DIMENSIONS = {
-  '16:9': { '720p': { width: 1280, height: 720 }, '1080p': { width: 1920, height: 1080 } },
-  '9:16': { '720p': { width: 720, height: 1280 }, '1080p': { width: 1080, height: 1920 } },
+  '16:9': {
+    '720p': { width: 1280, height: 720 },
+    '1080p': { width: 1920, height: 1080 },
+    '4k': { width: 3840, height: 2160 },
+  },
+  '9:16': {
+    '720p': { width: 720, height: 1280 },
+    '1080p': { width: 1080, height: 1920 },
+    '4k': { width: 2160, height: 3840 },
+  },
 };
 
 export function getCanvasDimensions(aspectRatio, resolution) {
@@ -13,15 +21,17 @@ export function getCanvasDimensions(aspectRatio, resolution) {
 }
 
 /**
- * 1080p is exactly 1.5x the linear size of 720p in both directions for
- * every aspect ratio we support, so a single uniform multiplier correctly
- * scales font sizes/padding/badge sizes to look the same proportion of the
- * frame regardless of resolution. Positioning itself doesn't use this --
- * see the fraction-based functions below, which are resolution- and
- * aspect-ratio-independent by construction.
+ * 1080p is exactly 1.5x and 4k is exactly 3x the linear size of 720p in
+ * both directions for every aspect ratio we support, so a single uniform
+ * multiplier correctly scales font sizes/padding/badge sizes to look the
+ * same proportion of the frame regardless of resolution. Positioning itself
+ * doesn't use this -- see the fraction-based functions below, which are
+ * resolution- and aspect-ratio-independent by construction.
  */
 export function getScaleFactor(resolution) {
-  return resolution === '1080p' ? 1.5 : 1;
+  if (resolution === '4k') return 3;
+  if (resolution === '1080p') return 1.5;
+  return 1;
 }
 
 const BASE_PAD = 40; // at scaleFactor 1

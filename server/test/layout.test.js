@@ -8,16 +8,18 @@ import {
   introTextY,
 } from '../src/lib/layout.js';
 
-test('getCanvasDimensions returns the 4 supported combos correctly', () => {
+test('getCanvasDimensions returns the 6 supported combos correctly', () => {
   assert.deepEqual(getCanvasDimensions('16:9', '720p'), { width: 1280, height: 720 });
   assert.deepEqual(getCanvasDimensions('16:9', '1080p'), { width: 1920, height: 1080 });
+  assert.deepEqual(getCanvasDimensions('16:9', '4k'), { width: 3840, height: 2160 });
   assert.deepEqual(getCanvasDimensions('9:16', '720p'), { width: 720, height: 1280 });
   assert.deepEqual(getCanvasDimensions('9:16', '1080p'), { width: 1080, height: 1920 });
+  assert.deepEqual(getCanvasDimensions('9:16', '4k'), { width: 2160, height: 3840 });
 });
 
 test('getCanvasDimensions rejects an unknown combo rather than silently guessing', () => {
   assert.throws(() => getCanvasDimensions('4:3', '720p'));
-  assert.throws(() => getCanvasDimensions('16:9', '4k'));
+  assert.throws(() => getCanvasDimensions('16:9', '8k'));
 });
 
 test('every supported combo keeps the requested aspect ratio exactly', () => {
@@ -27,13 +29,17 @@ test('every supported combo keeps the requested aspect ratio exactly', () => {
   assert.equal(w169 / h169, 16 / 9);
 });
 
-test('getScaleFactor: 1080p is exactly 1.5x 720p in linear scale (matches the real resolution ratio)', () => {
+test('getScaleFactor: 1080p is exactly 1.5x and 4k is exactly 3x 720p in linear scale (matches the real resolution ratios)', () => {
   assert.equal(getScaleFactor('720p'), 1);
   assert.equal(getScaleFactor('1080p'), 1.5);
+  assert.equal(getScaleFactor('4k'), 3);
   const dims720 = getCanvasDimensions('16:9', '720p');
   const dims1080 = getCanvasDimensions('16:9', '1080p');
+  const dims4k = getCanvasDimensions('16:9', '4k');
   assert.equal(dims1080.width / dims720.width, getScaleFactor('1080p'));
   assert.equal(dims1080.height / dims720.height, getScaleFactor('1080p'));
+  assert.equal(dims4k.width / dims720.width, getScaleFactor('4k'));
+  assert.equal(dims4k.height / dims720.height, getScaleFactor('4k'));
 });
 
 test('getPad scales with the resolution scale factor', () => {

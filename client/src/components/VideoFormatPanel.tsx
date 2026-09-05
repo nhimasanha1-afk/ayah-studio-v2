@@ -14,10 +14,17 @@ export function VideoFormatPanel() {
       <SelectField label="Resolution" value={resolution} onChange={(v) => setResolution(v as typeof resolution)}>
         {RESOLUTIONS.map((r) => (
           <option key={r} value={r}>
-            {r}
+            {r === '4k' ? '4K' : r}
           </option>
         ))}
       </SelectField>
+
+      {resolution === '4k' && (
+        <p className="text-xs text-amber-400">
+          4K needs significantly more server memory than 720p/1080p. If the current server plan is too small, the
+          export will be rejected upfront with a clear message rather than risking a crash.
+        </p>
+      )}
 
       <SelectField label="Aspect ratio" value={aspectRatio} onChange={(v) => setAspectRatio(v as typeof aspectRatio)}>
         {ASPECT_RATIOS.map((a) => (
