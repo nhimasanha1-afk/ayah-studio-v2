@@ -466,8 +466,8 @@ export function PreviewPane() {
           </div>
         )}
 
-        {/* Watermark */}
-        {style.badges.watermark.enabled && style.badges.watermark.text && (
+        {/* Watermark (hidden during the intro/outro cards, mirrors videoComposition.js's badgeVisibilityGate) */}
+        {style.badges.watermark.enabled && style.badges.watermark.text && phase === 'verse' && (
           <div
             style={{
               ...badgePositionStyle(style.badges.watermark.position),
@@ -481,8 +481,8 @@ export function PreviewPane() {
           </div>
         )}
 
-        {/* Channel name badge */}
-        {style.badges.channelNameBadge.enabled && style.badges.channelNameBadge.text && (
+        {/* Channel name badge (hidden during the intro/outro cards, mirrors videoComposition.js's badgeVisibilityGate) */}
+        {style.badges.channelNameBadge.enabled && style.badges.channelNameBadge.text && phase === 'verse' && (
           <div
             style={{
               ...badgePositionStyle(style.badges.channelNameBadge.position),
