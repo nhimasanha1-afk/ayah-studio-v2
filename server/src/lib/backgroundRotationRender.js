@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -93,8 +94,12 @@ async function renderSegment({
       '-an',
       // ultrafast: this intermediate segment gets fully re-decoded and
       // re-encoded again by the main composition pass, so its own encode
-      // quality is irrelevant -- only speed matters here.
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+      // quality is irrelevant -- only speed matters here. -threads 1 pins
+      // each segment to a single core rather than letting libx264 grab
+      // several -- necessary now that renderBackgroundRotation runs many
+      // segments concurrently (see its own doc comment): without this,
+      // N segments x N threads each on an N-core box oversubscribes badly.
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1', '-pix_fmt', 'yuv420p',
       outputPath,
     ];
     await runFfmpeg(args);
@@ -116,10 +121,28 @@ async function renderSegment({
     '-filter_complex', filter,
     '-map', '[out]',
     '-an',
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1', '-pix_fmt', 'yuv420p',
     outputPath,
   ];
   await runFfmpeg(args);
+}
+
+/**
+ * Runs items through fn with at most `limit` in flight at once, preserving
+ * result order regardless of which one finishes first.
+ */
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    for (;;) {
+      const i = nextIndex++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 /**
@@ -138,6 +161,19 @@ async function renderSegment({
  * here, then again as part of the main composition) -- an explicit,
  * measured tradeoff, chosen so exports fit in 2GB rather than needing a
  * bigger instance.
+ *
+ * Segments are rendered concurrently (bounded by CPU count), not one at a
+ * time -- confirmed as a real production problem: a long surah (e.g. a
+ * ~75-verse chapter) needs hundreds of instances, and running them fully
+ * sequentially took over 3 hours end to end. Each segment only ever reads
+ * from cachedPaths (the original source clips, already downloaded before
+ * this function runs), never from another segment's own output, so there's
+ * no real ordering dependency between segments -- only the final concat
+ * needs them in order, which segmentPaths already preserves regardless of
+ * completion order. renderSegment pins each one to a single thread
+ * (-threads 1) specifically so this parallelism doesn't oversubscribe the
+ * CPU (N segments x N threads each on an N-core box would be worse than
+ * sequential, not better).
  */
 export async function renderBackgroundRotation({
   instances,
@@ -162,14 +198,14 @@ export async function renderBackgroundRotation({
   fs.mkdirSync(workDir, { recursive: true });
 
   try {
-    const segmentPaths = [];
-    for (let i = 0; i < instances.length; i++) {
+    const concurrency = Math.max(1, os.cpus().length);
+    const segmentPaths = await mapWithConcurrency(instances, concurrency, async (instance, i) => {
       const segmentPath = path.join(workDir, `segment-${String(i).padStart(4, '0')}.mp4`);
       await renderSegment({
         isFirst: i === 0,
         isLast: i === instances.length - 1,
         prevClipPath: i > 0 ? cachedPaths.get(instances[i - 1].clip) : null,
-        clipPath: cachedPaths.get(instances[i].clip),
+        clipPath: cachedPaths.get(instance.clip),
         slotDurationSeconds,
         transitionDurationSeconds,
         transitionStyle,
@@ -177,8 +213,8 @@ export async function renderBackgroundRotation({
         canvasHeight,
         outputPath: segmentPath,
       });
-      segmentPaths.push(segmentPath);
-    }
+      return segmentPath;
+    });
 
     if (segmentPaths.length === 1) {
       fs.copyFileSync(segmentPaths[0], outputPath);
