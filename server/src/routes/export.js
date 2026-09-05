@@ -7,7 +7,7 @@ import { fetchChapter, fetchVerses, fetchReciterAudioFile } from '../lib/quranAp
 import { buildCaptionData } from '../lib/captionData.js';
 import { BACKGROUND_LIBRARY } from '../lib/backgroundLibrary.js';
 import { createJob, getJob, updateJob } from '../lib/jobQueue.js';
-import { cleanupOldOutputs, enforceOutputSizeCap } from '../lib/outputCleanup.js';
+import { cleanupOldOutputs, enforceOutputSizeCap, markOutputActive, markOutputInactive } from '../lib/outputCleanup.js';
 import { checkResolutionMemoryRequirement } from '../lib/resourceGuard.js';
 
 const router = Router();
@@ -182,12 +182,15 @@ router.post('/surah', async (req, res) => {
   const filename = `surah-${chapterId}-${Date.now()}.mp4`;
   const outputPath = path.join(outputDir, filename);
 
+  markOutputActive(outputPath);
   try {
     const result = await runSurahExport(surahExportOptionsFromBody(req.body, outputPath));
     res.json(formatSurahResult(result, filename));
   } catch (err) {
     console.error('[export] surah export failed:', err);
     res.status(500).json({ success: false, error: err.message ?? String(err) });
+  } finally {
+    markOutputInactive(outputPath);
   }
 });
 
@@ -217,6 +220,11 @@ router.post('/surah/jobs', (req, res) => {
   res.status(202).json({ jobId: job.id, status: job.status });
 
   updateJob(job.id, { status: 'running' });
+  // Registered for the export's whole lifetime, not just the encode step --
+  // protects the output path from both the periodic sweep in index.js and
+  // this route's own pre-export sweep above, which could otherwise unlink a
+  // file ffmpeg still has open for writing (see outputCleanup.js).
+  markOutputActive(outputPath);
   runSurahExport({
     ...surahExportOptionsFromBody(req.body, outputPath),
     onProgress: (stage, progress) => updateJob(job.id, { stage, progress }),
@@ -227,7 +235,8 @@ router.post('/surah/jobs', (req, res) => {
     .catch((err) => {
       console.error('[export] surah job failed:', err);
       updateJob(job.id, { status: 'error', error: err.message ?? String(err) });
-    });
+    })
+    .finally(() => markOutputInactive(outputPath));
 });
 
 router.get('/surah/jobs/:jobId', (req, res) => {
