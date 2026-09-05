@@ -94,7 +94,11 @@ export function BackgroundPanel() {
       {background.clipIds.length > 0 && (
         <div className="space-y-1.5">
           <span className="text-xs font-medium text-neutral-400">
-            Rotation pool (drag to reorder{background.order === 'shuffle' ? ' -- shuffled at export, order here is ignored' : ''})
+            Rotation pool --{' '}
+            <span className="text-emerald-400">
+              {background.clipIds.length} selected
+            </span>{' '}
+            (drag to reorder{background.order === 'shuffle' ? ' -- shuffled at export, order here is ignored' : ''})
           </span>
           <ul className="space-y-1">
             {background.clipIds.map((clipId, i) => (
@@ -174,7 +178,19 @@ export function BackgroundPanel() {
 
       {uploadedBackgroundClips.length > 0 && (
         <div className="space-y-1.5">
-          <span className="text-xs font-medium text-neutral-400">Uploaded</span>
+          <span className="text-xs font-medium text-neutral-400">
+            Uploaded{' '}
+            <span
+              className={
+                uploadedBackgroundClips.filter((c) => background.clipIds.includes(c.id)).length > 0
+                  ? 'text-emerald-400'
+                  : 'text-neutral-600'
+              }
+            >
+              ({uploadedBackgroundClips.filter((c) => background.clipIds.includes(c.id)).length}/
+              {uploadedBackgroundClips.length})
+            </span>
+          </span>
           <ul className="space-y-1">
             {uploadedBackgroundClips.map((clip) => {
               const selected = background.clipIds.includes(clip.id);
@@ -202,11 +218,17 @@ export function BackgroundPanel() {
       {library.data &&
         Object.entries(library.data).map(([category, clips]) => {
           const categoryClipIds = clips.map((c) => c.id);
+          const selectedInCategory = categoryClipIds.filter((id) => background.clipIds.includes(id)).length;
           const allSelected = categoryClipIds.every((id) => background.clipIds.includes(id));
           return (
             <div key={category} className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-neutral-400 capitalize">{category}</span>
+                <span className="text-xs font-medium text-neutral-400 capitalize">
+                  {category}{' '}
+                  <span className={selectedInCategory > 0 ? 'text-emerald-400' : 'text-neutral-600'}>
+                    ({selectedInCategory}/{categoryClipIds.length})
+                  </span>
+                </span>
                 <button
                   type="button"
                   className="rounded px-1.5 py-0.5 text-[11px] font-medium text-emerald-400 hover:bg-neutral-800"
