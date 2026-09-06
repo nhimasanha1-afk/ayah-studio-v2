@@ -24,6 +24,43 @@ function formatDuration(totalSeconds: number): string {
 // back and forth just to compare counts.
 const REFERENCE_CLIP_LENGTHS_SECONDS = [10, 15, 20, 30];
 
+function shuffled<T>(items: T[]): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// Round-robins one clip per category per pass so the picks spread evenly
+// across whichever categories are featured, instead of a plain random draw
+// over the pooled clips which would let a large category (e.g. 20 Ocean
+// clips) crowd out a small one. Final order is reshuffled so the round-robin
+// pattern isn't visible in the resulting rotation.
+function pickRandomAcrossCategories(
+  categorized: Record<string, { id: string }[]>,
+  featuredCategories: Set<string>,
+  count: number
+): string[] {
+  const categoryNames = Object.keys(categorized).filter(
+    (name) => featuredCategories.size === 0 || featuredCategories.has(name)
+  );
+  const pools = categoryNames.map((name) => shuffled(categorized[name].map((c) => c.id)));
+
+  const picked: string[] = [];
+  for (let round = 0; picked.length < count; round++) {
+    const roundHadPick = pools.some((pool) => round < pool.length);
+    if (!roundHadPick) break;
+    for (const pool of pools) {
+      if (picked.length >= count) break;
+      if (round < pool.length) picked.push(pool[round]);
+    }
+  }
+
+  return shuffled(picked);
+}
+
 export function BackgroundPanel() {
   const library = useBackgroundLibrary();
   const background = useExportConfigStore((s) => s.background);
@@ -37,12 +74,17 @@ export function BackgroundPanel() {
   const setBackgroundTiming = useExportConfigStore((s) => s.setBackgroundTiming);
   const toggleClipInPool = useExportConfigStore((s) => s.toggleClipInPool);
   const toggleClipsInPool = useExportConfigStore((s) => s.toggleClipsInPool);
+  const setClipPool = useExportConfigStore((s) => s.setClipPool);
   const moveClipInPool = useExportConfigStore((s) => s.moveClipInPool);
   const reorderClipInPool = useExportConfigStore((s) => s.reorderClipInPool);
   const setPreviewClip = useExportConfigStore((s) => s.setPreviewClip);
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  // Empty set means "no filter -- all categories eligible"; clicking a chip
+  // narrows to just the categories the user has explicitly checked.
+  const [featuredCategories, setFeaturedCategories] = useState<Set<string>>(new Set());
+  const [randomCount, setRandomCount] = useState(20);
 
   // Real, currently-selected-chapter duration estimate -- same inputs
   // PreviewPane uses for its own timeline (verse timing data + the
@@ -70,6 +112,21 @@ export function BackgroundPanel() {
     background.transitionDurationSeconds
   );
 
+  function toggleFeaturedCategory(category: string) {
+    setFeaturedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  }
+
+  function handleRandomize() {
+    if (!library.data) return;
+    const picked = pickRandomAcrossCategories(library.data, featuredCategories, randomCount);
+    setClipPool(picked);
+  }
+
   // Checking a clip in also previews it immediately, so you can see what it
   // looks like before committing to it -- unchecking just removes it as
   // before, with no preview side effect.
@@ -90,6 +147,58 @@ export function BackgroundPanel() {
     <Panel title="Background">
       {library.loading && <p className="text-xs text-neutral-500">Loading clip library…</p>}
       {library.error && <p className="text-xs text-red-400">Failed to load background library: {library.error}</p>}
+
+      {library.data && (
+        <div className="space-y-2 rounded-md border border-neutral-800 p-2.5">
+          <span className="text-xs font-medium text-neutral-300">🎲 Randomize selection</span>
+          <p className="text-[11px] text-neutral-500">
+            Pick which categories to feature (leave none checked to allow all), then randomize -- picks spread
+            evenly across the featured categories and replace whatever's currently selected.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.keys(library.data).map((category) => {
+              const active = featuredCategories.has(category);
+              return (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => toggleFeaturedCategory(category)}
+                  className={`rounded-full border px-2 py-0.5 text-[11px] capitalize ${
+                    active
+                      ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
+                      : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
+                  }`}
+                >
+                  {category}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <NumberField label="How many clips" value={randomCount} min={1} max={200} onChange={setRandomCount} />
+            </div>
+            {estimatedInstanceCount > 0 && (
+              <button
+                type="button"
+                className="mb-[1px] rounded px-2 py-1.5 text-[11px] text-neutral-400 hover:bg-neutral-800"
+                onClick={() => setRandomCount(estimatedInstanceCount)}
+                title="Set the count to match how many clips this chapter will actually cycle through"
+              >
+                Match chapter (~{estimatedInstanceCount})
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            className="w-full rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
+            onClick={handleRandomize}
+          >
+            Randomize {randomCount} clip{randomCount === 1 ? '' : 's'}
+            {featuredCategories.size > 0 ? ` from ${featuredCategories.size} categor${featuredCategories.size === 1 ? 'y' : 'ies'}` : ''}
+          </button>
+        </div>
+      )}
 
       {background.clipIds.length > 0 && (
         <div className="space-y-1.5">

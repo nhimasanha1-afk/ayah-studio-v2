@@ -63,6 +63,7 @@ interface ExportConfigState {
   moveClipInPool: (clipId: string, direction: 'up' | 'down') => void;
   reorderClipInPool: (fromIndex: number, toIndex: number) => void;
   toggleClipsInPool: (clipIds: string[]) => void;
+  setClipPool: (clipIds: string[]) => void;
   addUploadedBackgroundClip: (clip: UploadedBackgroundClip) => void;
   addUploadedCardImage: (image: UploadedCardImage) => void;
   setPreviewClip: (clipId: string | null) => void;
@@ -165,6 +166,10 @@ export const useExportConfigStore = create<ExportConfigState>((set) => ({
         : [...s.background.clipIds, ...clipIds.filter((id) => !s.background.clipIds.includes(id))];
       return { background: { ...s.background, clipIds: nextClipIds } };
     }),
+
+  // Wholesale replacement of the pool (e.g. from a random-selection action),
+  // unlike toggleClipsInPool which merges into whatever's already selected.
+  setClipPool: (clipIds) => set((s) => ({ background: { ...s.background, clipIds } })),
 
   addUploadedBackgroundClip: (clip) =>
     set((s) => ({ uploadedBackgroundClips: [...s.uploadedBackgroundClips, clip] })),
