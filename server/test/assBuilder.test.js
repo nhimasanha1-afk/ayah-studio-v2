@@ -199,3 +199,61 @@ test('highlighting a middle word: the file order is [marker, words-after, highli
     /^\{\\c&H[0-9A-F]+&\\shad\d+\}﴿١﴾\{\\r\} چهارم پنجم \{\\c&H[0-9A-F]+&\\shad0\}سوم\{\\c&H[0-9A-F]+&\\shad\d+\} اول دوم$/
   );
 });
+
+// Regression test for a real reported bug: on a downloaded export, the
+// Arabic caption appeared to move up and down and end up below the
+// Translation line at random. Root cause (confirmed by rendering real test
+// frames and reading back pixel rows): both caption styles are
+// bottom-anchored with no cap on how many lines a long verse/translation
+// can wrap into, so a long enough Translation climbs up far enough to pass
+// the Arabic line's fixed position, visually inverting the reading order.
+// The fix bounds each verse's Arabic/Translation font size (via a per-line
+// {\fs} override) so wrapping can never grow either block into the other's
+// space -- these tests lock in that behavior directly rather than via a
+// real ffmpeg render.
+function fontSizeOverride(dialogueText) {
+  const match = dialogueText.match(/^\{[^}]*\\fs(\d+)[^}]*\}/);
+  return match ? Number(match[1]) : null;
+}
+
+test('a normal-length verse and translation get no {\\fs} override at all (unaffected by the overlap guard)', () => {
+  const style = resolveStyle();
+  const ass = buildAssSubtitles(captionData, style, layout);
+  const [arabicLine] = dialogueLines(ass, 'Arabic');
+  const [translationLine] = dialogueLines(ass, 'Translation');
+  assert.equal(fontSizeOverride(arabicLine.split(',').slice(9).join(',')), null);
+  assert.equal(fontSizeOverride(translationLine.split(',').slice(9).join(',')), null);
+});
+
+test('a very long verse (real text of Quran 2:282, the longest in the Qur\'an) shrinks the Arabic font and applies the SAME size to every word event in that verse (no jitter as the highlighted word changes)', () => {
+  const style = resolveStyle({ typography: { arabicFontSize: 60 } });
+  const longArabicWords = Array(30)
+    .fill('وَٱلَّذِينَ ءَامَنُوا۟ وَهَاجَرُوا۟ وَجَٰهَدُوا۟ فِى سَبِيلِ ٱللَّهِ')
+    .join(' ')
+    .split(' ')
+    .map((text, i) => ({ text, startMs: i * 300, endMs: (i + 1) * 300 }));
+  const longVerseData = {
+    verses: [{ startMs: 0, endMs: longArabicWords.length * 300, verseNumber: 1, words: longArabicWords, translationText: 'x' }],
+  };
+  const ass = buildAssSubtitles(longVerseData, style, layout);
+  const sizes = dialogueLines(ass, 'Arabic').map((l) => fontSizeOverride(l.split(',').slice(9).join(',')));
+  assert.ok(sizes.every((s) => s !== null), 'every word event should carry a shrunk font size');
+  assert.ok(sizes.every((s) => s === sizes[0]), 'font size must be identical across all word events in the verse');
+  assert.ok(sizes[0] < 60, `expected a shrunk size below the base 60, got ${sizes[0]}`);
+  assert.ok(sizes[0] >= Math.round(60 * 0.55), 'must never shrink below the 55% floor');
+});
+
+test('a very long translation (real text of Quran 2:282) shrinks the Translation font down to (but not below) the 55% floor', () => {
+  const style = resolveStyle({ typography: { translationFontSize: 32 } });
+  const longTranslation = Array(15)
+    .fill('This is a fairly long translation sentence that will definitely wrap across many lines on screen.')
+    .join(' ');
+  const longVerseData = {
+    verses: [{ startMs: 0, endMs: 3000, verseNumber: 1, words: [{ text: 'ب', startMs: 0, endMs: 3000 }], translationText: longTranslation }],
+  };
+  const ass = buildAssSubtitles(longVerseData, style, layout);
+  const [translationLine] = dialogueLines(ass, 'Translation');
+  const size = fontSizeOverride(translationLine.split(',').slice(9).join(','));
+  assert.ok(size !== null && size < 32, `expected a shrunk size below the base 32, got ${size}`);
+  assert.ok(size >= Math.round(32 * 0.55), 'must never shrink below the 55% floor');
+});

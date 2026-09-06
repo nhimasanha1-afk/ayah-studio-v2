@@ -44,6 +44,66 @@ function dialogueLine(style, startMs, endMs, text) {
   return `Dialogue: 0,${formatAssTime(startMs)},${formatAssTime(endMs)},${style},,0,0,0,,${text}`;
 }
 
+const scalePx = (px, scaleFactor) => Math.round(px * scaleFactor);
+
+function captionSideMargins(scaleFactor) {
+  return { sideMargin: scalePx(60, scaleFactor), translationSideMargin: scalePx(80, scaleFactor) };
+}
+
+// Average glyph advance width as a fraction of font size, per script bucket
+// -- calibrated by rendering real test frames at known font sizes/canvas
+// widths and measuring the exact character count where libass's automatic
+// wrapping kicked in (not guessed): Arabic's cursive joining and
+// non-advancing diacritics pack far more characters per line than Latin at
+// the same font size (measured ~175 chars/line at 60px over 1160px usable
+// width vs Latin's ~110 chars/line at 32px over 1120px). Each constant is
+// nudged slightly above its measured value so the line-count estimate below
+// errs toward shrinking a touch early rather than missing a wrap -- the
+// failure mode of underestimating width is the exact overlap bug this
+// exists to prevent. Untested "other" scripts (CJK, Indic, etc., rendered
+// via TRANSLATION_SCRIPT_FONTS) use a wide, conservative placeholder since
+// most of those glyphs are visually squarer/wider than Latin.
+const AVG_CHAR_WIDTH_FACTOR = { arabic: 0.12, latin: 0.33, cyrillic: 0.33, other: 0.6 };
+
+// Real reported bug: on a downloaded export, the Arabic and Translation
+// caption lines appeared to "swap" -- the Arabic line ended up sitting
+// below/overlapped by the Translation text. Root cause (confirmed by
+// rendering real test frames and reading back pixel rows): both styles are
+// bottom-anchored (see captionVerticalLayout) with libass's default
+// WrapStyle, so a long verse's translation (which has no length cap -- a
+// single verse's translated meaning can run to several sentences) wraps
+// into as many lines as it takes and grows straight UP from its anchor with
+// no bound, eventually climbing above the Arabic line's own fixed position
+// and visually inverting the reading order. Bounding both styles to a
+// small max line count via a per-verse {\fs} downscale keeps each block's
+// footprint predictable regardless of verse/translation length, so neither
+// can grow into the other's space. The Arabic line itself never collides
+// the other direction (it's the one closer to the bottom edge, so extra
+// lines grow away from Translation) but is capped too so an outlier's
+// wordy verse doesn't swing between a single line and filling the screen.
+const MAX_CAPTION_LINES = 2;
+// Never shrink below this fraction of the user's chosen size -- a rare,
+// extremely long verse (e.g. Al-Baqarah 2:282, the Qur'an's longest at
+// ~130 words) hitting the floor may still take a 3rd line; that's an
+// acceptable, rare tradeoff against the alternative of illegibly tiny text.
+const MIN_FONT_SCALE = 0.55;
+
+/**
+ * The largest font size (in px, already resolution-scaled) that keeps
+ * `text` within `maxLines` lines at `usableWidthPx`, estimated from average
+ * glyph width rather than real shaping (real text layout isn't available
+ * here without a heavy rendering dependency) -- see AVG_CHAR_WIDTH_FACTOR's
+ * comment for how that estimate was calibrated and why it's biased safe.
+ * Never returns more than baseFontSizePx, and never less than
+ * MIN_FONT_SCALE of it.
+ */
+function fittingFontSize(textLength, baseFontSizePx, usableWidthPx, maxLines, avgCharWidthFactor) {
+  const minFontSizePx = Math.max(1, Math.round(baseFontSizePx * MIN_FONT_SCALE));
+  if (textLength <= 0 || usableWidthPx <= 0) return baseFontSizePx;
+  const maxSizeForLineCount = (maxLines * usableWidthPx) / (textLength * avgCharWidthFactor);
+  return Math.max(minFontSizePx, Math.min(baseFontSizePx, Math.floor(maxSizeForLineCount)));
+}
+
 function buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationLanguage) {
   const arabicFamily = FONT_REGISTRY.arabic[style.typography.arabicFont].family;
   const translationFamily = resolveTranslationFontFamily(style, translationLanguage);
@@ -53,13 +113,12 @@ function buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationL
   const outlineColor = hexToAssColor(style.colors.outlineColor);
 
   const { alignment, arabicMarginV, translationMarginV } = captionVerticalLayout(style.colors.textPosition, canvasHeight);
-  const scaled = (px) => Math.round(px * scaleFactor);
+  const scaled = (px) => scalePx(px, scaleFactor);
   const arabicFontSize = scaled(style.typography.arabicFontSize);
   const translationFontSize = scaled(style.typography.translationFontSize);
   const outlineWidth = Math.max(1, scaled(style.colors.outlineWidth));
   const shadowDepth = scaled(style.colors.shadowDepth);
-  const sideMargin = scaled(60);
-  const translationSideMargin = scaled(80);
+  const { sideMargin, translationSideMargin } = captionSideMargins(scaleFactor);
 
   return `[Script Info]
 ScriptType: v4.00+
@@ -105,8 +164,15 @@ export function buildAssSubtitles(
   const highlightColor = hexToAssColor(style.colors.highlightColor);
   const arabicColor = hexToAssColor(style.colors.arabicTextColor);
   const shadowDepth = Math.round(style.colors.shadowDepth * scaleFactor);
-  const fadeTag = style.colors.textRevealAnimation === 'fade' ? `{\\fad(${TEXT_REVEAL_FADE_MS},0)}` : '';
+  const fadeCmd = style.colors.textRevealAnimation === 'fade' ? `\\fad(${TEXT_REVEAL_FADE_MS},0)` : '';
   const lines = [];
+
+  const arabicFontSize = scalePx(style.typography.arabicFontSize, scaleFactor);
+  const translationFontSize = scalePx(style.typography.translationFontSize, scaleFactor);
+  const { sideMargin, translationSideMargin } = captionSideMargins(scaleFactor);
+  const arabicUsableWidth = canvasWidth - 2 * sideMargin;
+  const translationUsableWidth = canvasWidth - 2 * translationSideMargin;
+  const translationCharWidthFactor = AVG_CHAR_WIDTH_FACTOR[scriptForLanguage(translationLanguage)] ?? AVG_CHAR_WIDTH_FACTOR.other;
 
   for (const verse of captionData.verses) {
     if (verse.startMs == null || verse.endMs == null) continue;
@@ -127,10 +193,26 @@ export function buildAssSubtitles(
     // bundled Arabic fonts (Noto Naskh Arabic, Amiri) already include these
     // glyphs as ordinary characters -- no font override or ligature is
     // needed the way the old nested-circle marker required.
+    const markerText = style.colors.showArabicAyahNumbers ? `﴿${toArabicIndicNumerals(verse.verseNumber)}﴾` : '';
     const markerSegment = style.colors.showArabicAyahNumbers
-      ? `{\\c${arabicColor}&\\shad${shadowDepth}}﴿${toArabicIndicNumerals(verse.verseNumber)}﴾{\\r}`
+      ? `{\\c${arabicColor}&\\shad${shadowDepth}}${markerText}{\\r}`
       : null;
     const translationNumberPrefix = style.colors.showAyahNumbers ? `(${verse.verseNumber}) ` : '';
+
+    // Bounds this verse's Arabic/Translation font size so neither can wrap
+    // into enough lines to grow into the other's space (see
+    // AVG_CHAR_WIDTH_FACTOR's comment) -- computed once per verse from its
+    // full text length so every per-word Dialogue line for this verse gets
+    // the exact same size (no jitter as the highlighted word changes).
+    const arabicTextLength = words.reduce((sum, w) => sum + w.length, 0) + Math.max(0, words.length - 1) + (markerText ? markerText.length + 1 : 0);
+    const arabicFitSize = fittingFontSize(arabicTextLength, arabicFontSize, arabicUsableWidth, MAX_CAPTION_LINES, AVG_CHAR_WIDTH_FACTOR.arabic);
+    const arabicFsCmd = arabicFitSize < arabicFontSize ? `\\fs${arabicFitSize}` : '';
+    const arabicPrefix = fadeCmd || arabicFsCmd ? `{${fadeCmd}${arabicFsCmd}}` : '';
+
+    const translationText = translationNumberPrefix + verse.translationText;
+    const translationFitSize = fittingFontSize(translationText.length, translationFontSize, translationUsableWidth, MAX_CAPTION_LINES, translationCharWidthFactor);
+    const translationFsCmd = translationFitSize < translationFontSize ? `\\fs${translationFitSize}` : '';
+    const translationPrefix = fadeCmd || translationFsCmd ? `{${fadeCmd}${translationFsCmd}}` : '';
 
     for (let i = 0; i < verse.words.length; i++) {
       const word = verse.words[i];
@@ -163,17 +245,10 @@ export function buildAssSubtitles(
 
       const rendered = segments.length > 1 ? segments.slice().reverse().join(' ') : segments[0];
 
-      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, fadeTag + rendered));
+      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, arabicPrefix + rendered));
     }
 
-    lines.push(
-      dialogueLine(
-        'Translation',
-        verse.startMs,
-        verse.endMs,
-        fadeTag + escapeAssText(translationNumberPrefix + verse.translationText)
-      )
-    );
+    lines.push(dialogueLine('Translation', verse.startMs, verse.endMs, translationPrefix + escapeAssText(translationText)));
   }
 
   return buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationLanguage) + lines.join('\n') + '\n';
