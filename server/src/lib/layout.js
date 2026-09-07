@@ -102,6 +102,45 @@ const CAPTION_LAYOUT_FRACTIONS = {
  * original tuned size; callers that don't care about the scrim (assBuilder.js
  * only wants alignment/marginV) can omit it entirely.
  */
+/**
+ * Real reported bug: on a downloaded export using the default 'center' text
+ * position, the Arabic and Translation caption lines intermittently swapped
+ * vertical order -- confirmed on a real production export, and NOT
+ * reproducible by re-generating the exact same real verse/style data in
+ * isolation, which pointed away from anything in the per-verse text (word
+ * count, translation length, {\fs} sizing) and toward libass's own
+ * automatic collision-avoidance repositioning: 'center' uses ASS Alignment 5
+ * (middle), where -- unlike Alignment 2/8 (bottom/top), which anchor to a
+ * genuine screen edge -- MarginV does not carve out two distinct, stable
+ * vertical slots for the two styles. Both styles end up wanting the same
+ * central position, and it's only libass's collision avoidance (re-run on
+ * every one of the many per-word Arabic re-layouts) that keeps them apart --
+ * with no guaranteed stacking order, hence the intermittent swap.
+ *
+ * The fix: give every caption Dialogue line an explicit {\an<N>\pos(x,y)}
+ * override (see assBuilder.js) instead of leaning on the Style's own
+ * Alignment/MarginV. Per the ASS spec, an explicitly \pos'd event is exempt
+ * from collision avoidance entirely, so this removes the ambiguity at its
+ * source rather than working around symptoms. All three textPosition modes
+ * are unified onto Alignment 2 (bottom-anchor: text grows upward, away from
+ * whatever sits below it -- verified stable across extensive real-frame
+ * testing) except 'upper-third', which keeps Alignment 8 (top-anchor, grows
+ * downward) since that's the direction its whole layout is built around.
+ * This function returns the alignment override to emit and the two styles'
+ * anchor Y in raw canvas pixels, both already resolution-scaled.
+ */
+export function captionAnchorPosition(textPosition, canvasWidth, canvasHeight) {
+  const { alignment, arabicMarginV, translationMarginV } = captionVerticalLayout(textPosition, canvasHeight);
+  const renderAlignment = alignment === 8 ? 8 : 2;
+  const anchorY = (marginV) => (renderAlignment === 8 ? marginV : canvasHeight - marginV);
+  return {
+    an: renderAlignment,
+    x: Math.round(canvasWidth / 2),
+    arabicY: anchorY(arabicMarginV),
+    translationY: anchorY(translationMarginV),
+  };
+}
+
 export function captionVerticalLayout(textPosition, canvasHeight, scrimHeightScale = 1) {
   const f = CAPTION_LAYOUT_FRACTIONS[textPosition] ?? CAPTION_LAYOUT_FRACTIONS.center;
   // Rounding happens only at the very end, on the raw (unrounded) height

@@ -1,5 +1,5 @@
 import { hexToAssColor } from './colorUtils.js';
-import { captionVerticalLayout } from './layout.js';
+import { captionVerticalLayout, captionAnchorPosition } from './layout.js';
 import { FONT_REGISTRY, TRANSLATION_SCRIPT_FONTS } from './styleConfig.js';
 import { scriptForLanguage } from './translationFonts.js';
 import { toArabicIndicNumerals } from './arabicNumerals.js';
@@ -174,6 +174,14 @@ export function buildAssSubtitles(
   const translationUsableWidth = canvasWidth - 2 * translationSideMargin;
   const translationCharWidthFactor = AVG_CHAR_WIDTH_FACTOR[scriptForLanguage(translationLanguage)] ?? AVG_CHAR_WIDTH_FACTOR.other;
 
+  // Explicit \pos (see captionAnchorPosition's comment) instead of leaning
+  // on the Style's own Alignment/MarginV -- an explicitly positioned event
+  // is exempt from libass's automatic collision avoidance, which is what
+  // was causing the Arabic/Translation swap.
+  const anchor = captionAnchorPosition(style.colors.textPosition, canvasWidth, canvasHeight);
+  const arabicPosCmd = `\\an${anchor.an}\\pos(${anchor.x},${anchor.arabicY})`;
+  const translationPosCmd = `\\an${anchor.an}\\pos(${anchor.x},${anchor.translationY})`;
+
   for (const verse of captionData.verses) {
     if (verse.startMs == null || verse.endMs == null) continue;
 
@@ -207,12 +215,12 @@ export function buildAssSubtitles(
     const arabicTextLength = words.reduce((sum, w) => sum + w.length, 0) + Math.max(0, words.length - 1) + (markerText ? markerText.length + 1 : 0);
     const arabicFitSize = fittingFontSize(arabicTextLength, arabicFontSize, arabicUsableWidth, MAX_CAPTION_LINES, AVG_CHAR_WIDTH_FACTOR.arabic);
     const arabicFsCmd = arabicFitSize < arabicFontSize ? `\\fs${arabicFitSize}` : '';
-    const arabicPrefix = fadeCmd || arabicFsCmd ? `{${fadeCmd}${arabicFsCmd}}` : '';
+    const arabicPrefix = `{${arabicPosCmd}${fadeCmd}${arabicFsCmd}}`;
 
     const translationText = translationNumberPrefix + verse.translationText;
     const translationFitSize = fittingFontSize(translationText.length, translationFontSize, translationUsableWidth, MAX_CAPTION_LINES, translationCharWidthFactor);
     const translationFsCmd = translationFitSize < translationFontSize ? `\\fs${translationFitSize}` : '';
-    const translationPrefix = fadeCmd || translationFsCmd ? `{${fadeCmd}${translationFsCmd}}` : '';
+    const translationPrefix = `{${translationPosCmd}${fadeCmd}${translationFsCmd}}`;
 
     for (let i = 0; i < verse.words.length; i++) {
       const word = verse.words[i];

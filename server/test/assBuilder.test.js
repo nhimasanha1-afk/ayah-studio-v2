@@ -25,6 +25,16 @@ function dialogueLines(assText, styleName) {
   return assText.split('\n').filter((l) => l.startsWith('Dialogue:') && l.includes(`,${styleName},`));
 }
 
+// Every Dialogue line now carries a mandatory leading {\an<N>\pos(x,y)}
+// override (see captionAnchorPosition's comment in layout.js) so content
+// assertions unrelated to positioning strip it first, same as they'd ignore
+// any other override tag that isn't the thing under test.
+const POS_PREFIX = /^\{\\an\d\\pos\(\d+,\d+\)\}/;
+
+function dialogueText(line) {
+  return line.split(',').slice(9).join(',').replace(POS_PREFIX, '');
+}
+
 test('with no translationLanguage, the Translation style uses the user\'s chosen latin font (unchanged default behavior)', () => {
   const style = resolveStyle({ typography: { latinFont: 'inter' } });
   const ass = buildAssSubtitles(captionData, style, layout);
@@ -126,13 +136,13 @@ test('both on: Arabic line gets the Arabic-Indic numeral appended after the word
   // its screen-left) it must be written FIRST in the file, ahead of the
   // (itself override-wrapped, since word highlighting is on by default)
   // word run.
-  const arabicText = arabicLine.split(',').slice(9).join(',');
+  const arabicText = dialogueText(arabicLine);
   assert.match(arabicText, /^\{\\c&H[0-9A-F]+&\\shad\d+\}﴿٣﴾\{\\r\} \{\\c&H[0-9A-F]+&\\shad0\}قُلْ/);
 
   // Translation: number is a prefix at the very start of the line, per an
   // explicit user choice to keep both numbers on the left even though
   // English's natural sentence-end is on the right.
-  const translationText = translationLine.split(',').slice(9).join(',');
+  const translationText = dialogueText(translationLine);
   assert.match(translationText, /^\(3\) Say, He is God, the One$/);
 });
 
@@ -142,7 +152,7 @@ test('the Arabic ayah number always renders in the normal (non-highlighted) colo
   });
   const ass = buildAssSubtitles(captionData, style, layout);
   const [arabicLine] = dialogueLines(ass, 'Arabic');
-  const arabicText = arabicLine.split(',').slice(9).join(',');
+  const arabicText = dialogueText(arabicLine);
   // The override block wrapping the numeral (now written first in the
   // file -- see the run-order comment in assBuilder.js) must use the
   // normal arabic color, not leave the highlight color active.
@@ -154,7 +164,7 @@ test('wordHighlightEnabled: false -> no per-word color override anywhere on the 
   const ass = buildAssSubtitles(captionData, style, layout);
   const arabicLines = dialogueLines(ass, 'Arabic');
   for (const line of arabicLines) {
-    const arabicText = line.split(',').slice(9).join(',');
+    const arabicText = dialogueText(line);
     assert.ok(!arabicText.includes('{\\c'), `expected no color override, got: ${arabicText}`);
   }
 });
@@ -193,7 +203,7 @@ test('highlighting a middle word: the file order is [marker, words-after, highli
   const arabicLines = dialogueLines(ass, 'Arabic');
   // The 3rd word ("سوم", index 2) is the active/highlighted one in its dialogue line.
   const line = arabicLines[2];
-  const text = line.split(',').slice(9).join(',');
+  const text = dialogueText(line);
   assert.match(
     text,
     /^\{\\c&H[0-9A-F]+&\\shad\d+\}﴿١﴾\{\\r\} چهارم پنجم \{\\c&H[0-9A-F]+&\\shad0\}سوم\{\\c&H[0-9A-F]+&\\shad\d+\} اول دوم$/
@@ -241,6 +251,56 @@ test('a very long verse (real text of Quran 2:282, the longest in the Qur\'an) s
   assert.ok(sizes.every((s) => s === sizes[0]), 'font size must be identical across all word events in the verse');
   assert.ok(sizes[0] < 60, `expected a shrunk size below the base 60, got ${sizes[0]}`);
   assert.ok(sizes[0] >= Math.round(60 * 0.55), 'must never shrink below the 55% floor');
+});
+
+// Regression test for a real reported bug, distinct from the wrap-overlap
+// one above: on a downloaded export using the default 'center' text
+// position, the Arabic and Translation lines intermittently swapped
+// vertical order. Not reproducible by regenerating the exact real verse
+// data that triggered it in isolation (ruling out anything content-length
+// related), which pointed to libass's own automatic collision avoidance:
+// 'center' uses ASS Alignment 5, where MarginV doesn't carve out two
+// distinct, stable vertical slots for the two styles the way it does for
+// Alignment 2/8 (bottom/top, anchored to a genuine screen edge) -- both
+// styles end up wanting the same central position, and only collision
+// avoidance (re-run on every one of the many per-word Arabic re-layouts)
+// keeps them apart, with no guaranteed order. The fix gives every line an
+// explicit {\an<N>\pos(x,y)} override, which per the ASS spec is exempt
+// from collision avoidance entirely -- these tests confirm the override is
+// present and gives Arabic/Translation distinct, deterministically-ordered
+// anchor points for all three textPosition modes.
+test('every caption Dialogue line carries an explicit {\\an\\pos(x,y)} override, in all three textPosition modes', () => {
+  for (const textPosition of ['upper-third', 'center', 'lower-third']) {
+    const style = resolveStyle({ colors: { textPosition } });
+    const ass = buildAssSubtitles(captionData, style, layout);
+    const [arabicLine] = dialogueLines(ass, 'Arabic');
+    const [translationLine] = dialogueLines(ass, 'Translation');
+    for (const line of [arabicLine, translationLine]) {
+      const text = line.split(',').slice(9).join(',');
+      assert.match(text, POS_PREFIX, `${textPosition}: expected a leading {\\an\\pos(x,y)} override, got: ${text}`);
+    }
+  }
+});
+
+test('Arabic and Translation always get distinct anchor points, with Arabic positioned further from whichever edge the layout grows away from', () => {
+  function anchorPoint(line) {
+    const match = line.split(',').slice(9).join(',').match(/^\{\\an(\d)\\pos\((\d+),(\d+)\)\}/);
+    return { an: Number(match[1]), x: Number(match[2]), y: Number(match[3]) };
+  }
+  for (const textPosition of ['upper-third', 'center', 'lower-third']) {
+    const style = resolveStyle({ colors: { textPosition } });
+    const ass = buildAssSubtitles(captionData, style, layout);
+    const arabic = anchorPoint(dialogueLines(ass, 'Arabic')[0]);
+    const translation = anchorPoint(dialogueLines(ass, 'Translation')[0]);
+    assert.equal(arabic.an, translation.an, `${textPosition}: both styles must share the same alignment override`);
+    assert.equal(arabic.x, translation.x, `${textPosition}: both styles must share the same horizontal center`);
+    assert.notEqual(arabic.y, translation.y, `${textPosition}: Arabic and Translation must not share the same anchor Y`);
+    // Alignment 8 grows downward from the anchor (top-anchored) so Arabic
+    // must start higher (smaller y); alignment 2 grows upward (bottom-
+    // anchored) so Arabic's anchor must be further from the bottom edge
+    // (smaller y) too -- in both cases Arabic's y is the smaller one.
+    assert.ok(arabic.y < translation.y, `${textPosition}: expected Arabic's anchor above Translation's, got Arabic.y=${arabic.y}, Translation.y=${translation.y}`);
+  }
 });
 
 test('a very long translation (real text of Quran 2:282) shrinks the Translation font down to (but not below) the 55% floor', () => {
