@@ -285,11 +285,25 @@ export async function startExportJob(request: SurahExportRequest): Promise<{ job
   return { jobId: data.jobId };
 }
 
+export class JobStatusFetchError extends Error {
+  // Set from the real HTTP status when the server responded at all (as
+  // opposed to a network-level failure, which never reaches this class --
+  // see ExportBar's poll loop, which retries through a 5xx here exactly
+  // like a raw network drop, since both are transient/backend-side, but
+  // reports anything else (404 "Job not found", etc.) immediately since
+  // retrying can't fix a job the server has genuinely lost track of.
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export async function getExportJob(jobId: string): Promise<ExportJob> {
   const res = await fetch(`/api/export/surah/jobs/${jobId}`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error ?? `Failed to fetch job status (${res.status})`);
+    throw new JobStatusFetchError(data.error ?? `Failed to fetch job status (${res.status})`, res.status);
   }
   return res.json() as Promise<ExportJob>;
 }
