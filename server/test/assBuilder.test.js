@@ -29,7 +29,7 @@ function dialogueLines(assText, styleName) {
 // override (see captionAnchorPosition's comment in layout.js) so content
 // assertions unrelated to positioning strip it first, same as they'd ignore
 // any other override tag that isn't the thing under test.
-const POS_PREFIX = /^\{\\an\d\\pos\(\d+,\d+\)\}/;
+const POS_PREFIX = /^\{\\an\d\\pos\(\d+,\d+\)[^}]*\}/;
 
 function dialogueText(line) {
   return line.split(',').slice(9).join(',').replace(POS_PREFIX, '');
@@ -284,7 +284,7 @@ test('every caption Dialogue line carries an explicit {\\an\\pos(x,y)} override,
 
 test('Arabic and Translation always get distinct anchor points, with Arabic positioned further from whichever edge the layout grows away from', () => {
   function anchorPoint(line) {
-    const match = line.split(',').slice(9).join(',').match(/^\{\\an(\d)\\pos\((\d+),(\d+)\)\}/);
+    const match = line.split(',').slice(9).join(',').match(/^\{\\an(\d)\\pos\((\d+),(\d+)\)/);
     return { an: Number(match[1]), x: Number(match[2]), y: Number(match[3]) };
   }
   for (const textPosition of ['upper-third', 'center', 'lower-third']) {
@@ -316,4 +316,53 @@ test('a very long translation (real text of Quran 2:282) shrinks the Translation
   const size = fontSizeOverride(translationLine.split(',').slice(9).join(','));
   assert.ok(size !== null && size < 32, `expected a shrunk size below the base 32, got ${size}`);
   assert.ok(size >= Math.round(32 * 0.55), 'must never shrink below the 55% floor');
+});
+
+// Regression test for a real reported bug, confirmed on a real downloaded
+// export: for a verse long enough to wrap onto multiple lines, the two
+// lines visibly SWAPPED which one rendered on top as the highlighted word
+// advanced through the sentence -- not just re-wrapped, but flipped whole.
+// Root cause: the highlight override tag splits the line into runs that
+// must be listed in file-REVERSED order for correct RTL (see the comment
+// above `segments` in assBuilder.js), but libass's own auto-wrap decides
+// line breaks from that same file-order string -- so which words land on
+// which line depended on which word was highlighted. Fixed by deciding line
+// breaks ourselves once per verse (wrapWordsIntoLines) and disabling
+// libass's auto-wrap (\q2) for these events. This test builds a real
+// multi-line verse (35 words) and checks that highlighting every word in
+// turn never changes which OTHER words share its line.
+test('a multi-line verse keeps identical line breaks no matter which word is highlighted (regression: lines used to swap)', () => {
+  const style = resolveStyle({ colors: { wordHighlightEnabled: true } });
+  const arabicWords = Array(35)
+    .fill('وَٱلَّذِينَ ءَامَنُوا۟ وَهَاجَرُوا۟ وَجَٰهَدُوا۟ فِى سَبِيلِ ٱللَّهِ')
+    .join(' ')
+    .split(' ')
+    .slice(0, 35);
+  const words = arabicWords.map((text, i) => ({ text, startMs: i * 300, endMs: (i + 1) * 300 }));
+  const longVerseData = {
+    verses: [{ startMs: 0, endMs: words.length * 300, verseNumber: 1, words, translationText: 'x' }],
+  };
+  const ass = buildAssSubtitles(longVerseData, style, layout);
+  const arabicLines = dialogueLines(ass, 'Arabic');
+  assert.ok(arabicLines.length === words.length, 'expected one Dialogue line per word');
+
+  // The line CONTAINING the highlighted word legitimately reverses its own
+  // internal file order (that's the correct RTL fix for wherever the
+  // highlight sits -- see the comment above `segments`), so comparing exact
+  // strings across events would flag that expected, correct variation as a
+  // false failure. The actual invariant that matters -- and the one that
+  // was broken -- is which words are GROUPED onto which line at all; count
+  // words per \N-separated line rather than compare their order.
+  function lineWordCounts(dialogueLine) {
+    const text = dialogueText(dialogueLine);
+    const plain = text.replace(/\{\\c&H[0-9A-F]+&\\shad\d+\}/g, '').replace(/\{\\r\}/g, '');
+    return plain.split('\\N').map((line) => line.trim().split(/\s+/).filter(Boolean).length);
+  }
+
+  const first = lineWordCounts(arabicLines[0]);
+  assert.ok(first.length > 1, 'test setup should produce a multi-line verse');
+  for (let i = 1; i < arabicLines.length; i++) {
+    const counts = lineWordCounts(arabicLines[i]);
+    assert.deepEqual(counts, first, `word ${i}'s per-line word counts differ from word 0's -- line breaks are unstable`);
+  }
 });

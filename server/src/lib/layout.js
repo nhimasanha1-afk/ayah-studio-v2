@@ -96,13 +96,6 @@ const CAPTION_LAYOUT_FRACTIONS = {
 };
 
 /**
- * scrimHeightScale grows/shrinks the scrim band around its original tuned
- * center point (rather than just extending it downward), so resizing it
- * doesn't drift away from the captions it's meant to sit behind. 1 = the
- * original tuned size; callers that don't care about the scrim (assBuilder.js
- * only wants alignment/marginV) can omit it entirely.
- */
-/**
  * Real reported bug: on a downloaded export using the default 'center' text
  * position, the Arabic and Translation caption lines intermittently swapped
  * vertical order -- confirmed on a real production export, and NOT
@@ -141,6 +134,13 @@ export function captionAnchorPosition(textPosition, canvasWidth, canvasHeight) {
   };
 }
 
+/**
+ * scrimHeightScale grows/shrinks the scrim band around its original tuned
+ * center point (rather than just extending it downward), so resizing it
+ * doesn't drift away from the captions it's meant to sit behind. 1 = the
+ * original tuned size; callers that don't care about the scrim (assBuilder.js
+ * only wants alignment/marginV) can omit it entirely.
+ */
 export function captionVerticalLayout(textPosition, canvasHeight, scrimHeightScale = 1) {
   const f = CAPTION_LAYOUT_FRACTIONS[textPosition] ?? CAPTION_LAYOUT_FRACTIONS.center;
   // Rounding happens only at the very end, on the raw (unrounded) height

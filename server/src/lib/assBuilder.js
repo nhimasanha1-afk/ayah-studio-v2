@@ -104,6 +104,51 @@ function fittingFontSize(textLength, baseFontSizePx, usableWidthPx, maxLines, av
   return Math.max(minFontSizePx, Math.min(baseFontSizePx, Math.floor(maxSizeForLineCount)));
 }
 
+/**
+ * Real reported bug, confirmed by rendering real word-by-word frames of a
+ * multi-line verse: as the highlighted word advanced, the Arabic line's two
+ * halves visibly SWAPPED which one rendered on top -- not just re-wrapped,
+ * but flipped. Root cause: the word-highlight override tag splits the verse
+ * text into runs that must be listed in file-REVERSED order for libass to
+ * place them correctly RTL (see the comment where `segments` is built), but
+ * libass's automatic line-wrapping decides break points from that same
+ * file-order string -- so which words land on which line shifted depending
+ * on where in the file order the highlighted run's split landed, which
+ * itself depends on WHICH word is highlighted. The two problems (correct
+ * RTL run order vs. stable line breaks) can't both be solved by leaning on
+ * libass's auto-wrap.
+ *
+ * The fix: decide line breaks ourselves, ONCE per verse from its full text
+ * (so every word-highlight frame within the verse uses identical breaks),
+ * then apply the existing reversal trick only WITHIN whichever single line
+ * currently contains the highlighted word -- every other line has no
+ * override tags at all and so shapes/orders correctly on its own (per the
+ * existing comment: "an unbroken plain-text run... shapes and orders
+ * correctly on its own"). Uses the same calibrated character-width model as
+ * fittingFontSize; the caller disables libass's own auto-wrap for these
+ * events (\q2) so only these explicit breaks ever apply.
+ */
+function wrapWordsIntoLines(words, usableWidthPx, fontSizePx, avgCharWidthFactor) {
+  const capacityChars = Math.max(1, usableWidthPx / (fontSizePx * avgCharWidthFactor));
+  const lines = [];
+  let currentLine = [];
+  let currentLength = 0;
+  for (let i = 0; i < words.length; i++) {
+    const wordLen = words[i].length;
+    const lengthIfAdded = currentLine.length === 0 ? wordLen : currentLength + 1 + wordLen;
+    if (currentLine.length > 0 && lengthIfAdded > capacityChars) {
+      lines.push(currentLine);
+      currentLine = [i];
+      currentLength = wordLen;
+    } else {
+      currentLine.push(i);
+      currentLength = lengthIfAdded;
+    }
+  }
+  if (currentLine.length > 0) lines.push(currentLine);
+  return lines;
+}
+
 function buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationLanguage) {
   const arabicFamily = FONT_REGISTRY.arabic[style.typography.arabicFont].family;
   const translationFamily = resolveTranslationFontFamily(style, translationLanguage);
@@ -215,7 +260,12 @@ export function buildAssSubtitles(
     const arabicTextLength = words.reduce((sum, w) => sum + w.length, 0) + Math.max(0, words.length - 1) + (markerText ? markerText.length + 1 : 0);
     const arabicFitSize = fittingFontSize(arabicTextLength, arabicFontSize, arabicUsableWidth, MAX_CAPTION_LINES, AVG_CHAR_WIDTH_FACTOR.arabic);
     const arabicFsCmd = arabicFitSize < arabicFontSize ? `\\fs${arabicFitSize}` : '';
-    const arabicPrefix = `{${arabicPosCmd}${fadeCmd}${arabicFsCmd}}`;
+    // \q2 disables libass's own auto-wrap for these events -- only the
+    // explicit \N breaks from wrapWordsIntoLines apply (see its comment).
+    const arabicPrefix = `{${arabicPosCmd}\\q2${fadeCmd}${arabicFsCmd}}`;
+    const arabicLineGroups = wrapWordsIntoLines(words, arabicUsableWidth, arabicFitSize, AVG_CHAR_WIDTH_FACTOR.arabic);
+    const wordLineIndex = new Array(words.length);
+    arabicLineGroups.forEach((group, lineIdx) => group.forEach((wordIdx) => (wordLineIndex[wordIdx] = lineIdx)));
 
     const translationText = translationNumberPrefix + verse.translationText;
     const translationFitSize = fittingFontSize(translationText.length, translationFontSize, translationUsableWidth, MAX_CAPTION_LINES, translationCharWidthFactor);
@@ -226,34 +276,45 @@ export function buildAssSubtitles(
       const word = verse.words[i];
       if (word.startMs == null || word.endMs == null) continue;
 
-      // libass places each {\...}-override-delimited run at its literal
-      // file-order position -- confirmed by direct pixel-order testing --
-      // rather than bidi-reordering runs as a whole for RTL. An unbroken
-      // plain-text run (no override tags anywhere in it) still shapes and
-      // orders correctly on its own, so the bug only appears once we
-      // introduce a run boundary (wrapping the active word, or appending
-      // the marker, in its own {\c...} block): each such wrap splits the
-      // line into multiple runs that libass then places left-to-right in
-      // file order instead of RTL order. The fix is to build the runs in
-      // their correct reading order (exactly as before) and then reverse
-      // that array before joining, so file order becomes correct visual
-      // (right-to-left) order. When there's only one run (no highlight
-      // and no marker), reversing a 1-element array is a no-op.
-      const segments = [];
-      if (style.colors.wordHighlightEnabled) {
-        const preWords = words.slice(0, i);
-        const postWords = words.slice(i + 1);
-        if (preWords.length) segments.push(preWords.join(' '));
-        segments.push(`{\\c${highlightColor}&\\shad0}${words[i]}{\\c${arabicColor}&\\shad${shadowDepth}}`);
-        if (postWords.length) segments.push(postWords.join(' '));
-      } else {
-        segments.push(words.join(' '));
-      }
-      if (markerSegment) segments.push(markerSegment);
+      // Line breaks are fixed per-verse (arabicLineGroups), independent of
+      // which word is active -- see wrapWordsIntoLines's comment. Only the
+      // ONE line containing the highlighted word gets the highlight-run
+      // treatment; every other line renders as plain, untagged text, which
+      // (per the note below) shapes and orders correctly on its own.
+      const activeLine = style.colors.wordHighlightEnabled ? wordLineIndex[i] : -1;
+      const renderedLines = arabicLineGroups.map((lineWordIndices, lineIdx) => {
+        const isLastLine = lineIdx === arabicLineGroups.length - 1;
 
-      const rendered = segments.length > 1 ? segments.slice().reverse().join(' ') : segments[0];
+        // libass places each {\...}-override-delimited run at its literal
+        // file-order position -- confirmed by direct pixel-order testing --
+        // rather than bidi-reordering runs as a whole for RTL. An unbroken
+        // plain-text run (no override tags anywhere in it) still shapes and
+        // orders correctly on its own, so the bug only appears once we
+        // introduce a run boundary (wrapping the active word, or appending
+        // the marker, in its own {\c...} block): each such wrap splits the
+        // line into multiple runs that libass then places left-to-right in
+        // file order instead of RTL order. The fix is to build the runs in
+        // their correct reading order (exactly as before) and then reverse
+        // that array before joining, so file order becomes correct visual
+        // (right-to-left) order. When there's only one run (no highlight
+        // and no marker), reversing a 1-element array is a no-op.
+        const segments = [];
+        if (lineIdx === activeLine) {
+          const posInLine = lineWordIndices.indexOf(i);
+          const preWords = lineWordIndices.slice(0, posInLine).map((idx) => words[idx]);
+          const postWords = lineWordIndices.slice(posInLine + 1).map((idx) => words[idx]);
+          if (preWords.length) segments.push(preWords.join(' '));
+          segments.push(`{\\c${highlightColor}&\\shad0}${words[i]}{\\c${arabicColor}&\\shad${shadowDepth}}`);
+          if (postWords.length) segments.push(postWords.join(' '));
+        } else {
+          segments.push(lineWordIndices.map((idx) => words[idx]).join(' '));
+        }
+        if (isLastLine && markerSegment) segments.push(markerSegment);
 
-      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, arabicPrefix + rendered));
+        return segments.length > 1 ? segments.slice().reverse().join(' ') : segments[0];
+      });
+
+      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, arabicPrefix + renderedLines.join('\\N')));
     }
 
     lines.push(dialogueLine('Translation', verse.startMs, verse.endMs, translationPrefix + escapeAssText(translationText)));
