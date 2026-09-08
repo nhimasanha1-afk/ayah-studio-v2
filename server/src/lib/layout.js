@@ -131,10 +131,18 @@ const CAPTION_LAYOUT_FRACTIONS = {
 // well below the visible scrim. Anchoring 'center' to fractions of the
 // scrim box itself instead -- rather than to any MarginV reading -- ties it
 // to a box that's already tuned and visible, and keeps it correct even if
-// the scrim's own tuning changes later. Values tuned by eye: rendering the
-// scrim box and both caption lines together and adjusting until a typical
-// one-line-each verse sits visually centered in the band.
-const CENTER_MODE_SCRIM_FRACTIONS = { arabic: 0.55, translation: 0.85 };
+// the scrim's own tuning changes later.
+//
+// Values tuned by eye against a real rendered frame with a marker line drawn
+// at the canvas's true vertical center: an initial pass (0.55/0.85) kept
+// each line comfortably inside the scrim band but, per a real follow-up
+// report, left the Arabic+Translation PAIR's combined midpoint sitting
+// visibly below true center rather than centered on it -- the earlier tuning
+// checked "is each line inside the box" but not "does the pair's own middle
+// land on the canvas's middle". Re-tuned so the two lines' combined vertical
+// center lands on the canvas's true center (confirmed against both a
+// one-line and a two-line Translation case).
+const CENTER_MODE_SCRIM_FRACTIONS = { arabic: 0.34, translation: 0.64 };
 
 export function captionAnchorPosition(textPosition, canvasWidth, canvasHeight, scrimHeightScale = 1) {
   const { alignment, arabicMarginV, translationMarginV, scrimTop, scrimHeight } = captionVerticalLayout(
