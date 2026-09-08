@@ -223,7 +223,12 @@ export function buildAssSubtitles(
   // on the Style's own Alignment/MarginV -- an explicitly positioned event
   // is exempt from libass's automatic collision avoidance, which is what
   // was causing the Arabic/Translation swap.
-  const anchor = captionAnchorPosition(style.colors.textPosition, canvasWidth, canvasHeight);
+  const anchor = captionAnchorPosition(
+    style.colors.textPosition,
+    canvasWidth,
+    canvasHeight,
+    style.colors.scrim.heightScale ?? 1
+  );
   const arabicPosCmd = `\\an${anchor.an}\\pos(${anchor.x},${anchor.arabicY})`;
   const translationPosCmd = `\\an${anchor.an}\\pos(${anchor.x},${anchor.translationY})`;
 

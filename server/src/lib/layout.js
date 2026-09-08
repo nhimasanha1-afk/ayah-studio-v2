@@ -122,9 +122,35 @@ const CAPTION_LAYOUT_FRACTIONS = {
  * This function returns the alignment override to emit and the two styles'
  * anchor Y in raw canvas pixels, both already resolution-scaled.
  */
-export function captionAnchorPosition(textPosition, canvasWidth, canvasHeight) {
-  const { alignment, arabicMarginV, translationMarginV } = captionVerticalLayout(textPosition, canvasHeight);
+// 'center's arabicMarginV/translationMarginV (in CAPTION_LAYOUT_FRACTIONS)
+// were tuned for ASS Alignment 5, where MarginV does NOT mean "distance from
+// the canvas edge" -- reusing them under that (edge-distance) reading, as
+// captionAnchorPosition first did, put the Translation anchor at y=580 on a
+// 720-tall canvas while the tuned scrim box only spans y=290-480: fully
+// outside it, confirmed on a real export where the Translation line rendered
+// well below the visible scrim. Anchoring 'center' to fractions of the
+// scrim box itself instead -- rather than to any MarginV reading -- ties it
+// to a box that's already tuned and visible, and keeps it correct even if
+// the scrim's own tuning changes later. Values tuned by eye: rendering the
+// scrim box and both caption lines together and adjusting until a typical
+// one-line-each verse sits visually centered in the band.
+const CENTER_MODE_SCRIM_FRACTIONS = { arabic: 0.55, translation: 0.85 };
+
+export function captionAnchorPosition(textPosition, canvasWidth, canvasHeight, scrimHeightScale = 1) {
+  const { alignment, arabicMarginV, translationMarginV, scrimTop, scrimHeight } = captionVerticalLayout(
+    textPosition,
+    canvasHeight,
+    scrimHeightScale
+  );
   const renderAlignment = alignment === 8 ? 8 : 2;
+  if (textPosition === 'center') {
+    return {
+      an: renderAlignment,
+      x: Math.round(canvasWidth / 2),
+      arabicY: Math.round(scrimTop + CENTER_MODE_SCRIM_FRACTIONS.arabic * scrimHeight),
+      translationY: Math.round(scrimTop + CENTER_MODE_SCRIM_FRACTIONS.translation * scrimHeight),
+    };
+  }
   const anchorY = (marginV) => (renderAlignment === 8 ? marginV : canvasHeight - marginV);
   return {
     an: renderAlignment,

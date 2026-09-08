@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildAssSubtitles } from '../src/lib/assBuilder.js';
 import { resolveStyle } from '../src/lib/styleConfig.js';
+import { captionVerticalLayout } from '../src/lib/layout.js';
 
 const layout = { canvasWidth: 1280, canvasHeight: 720, scaleFactor: 1 };
 
@@ -301,6 +302,38 @@ test('Arabic and Translation always get distinct anchor points, with Arabic posi
     // (smaller y) too -- in both cases Arabic's y is the smaller one.
     assert.ok(arabic.y < translation.y, `${textPosition}: expected Arabic's anchor above Translation's, got Arabic.y=${arabic.y}, Translation.y=${translation.y}`);
   }
+});
+
+// Regression test for a real reported bug, confirmed on a real downloaded
+// export: in 'center' mode (the app's default), the Translation line
+// rendered well below the visible scrim band entirely. Root cause: the fix
+// above originally read 'center's arabicMarginV/translationMarginV as
+// "distance from the canvas bottom edge" (correct for 'lower-third', where
+// they're genuinely defined that way) -- but 'center's values were tuned
+// for ASS Alignment 5, where MarginV means something else, so that reading
+// put the Translation anchor at y=580 on a 720-tall canvas while the tuned
+// scrim band only spans y=290-480. Fixed by anchoring 'center' to fractions
+// of the scrim band itself (see CENTER_MODE_SCRIM_FRACTIONS in layout.js).
+// This test checks both anchors actually fall inside that band.
+test("'center' mode's Arabic and Translation anchors both fall within the scrim band (regression: Translation used to render entirely below it)", () => {
+  const style = resolveStyle({ colors: { textPosition: 'center' } });
+  const ass = buildAssSubtitles(captionData, style, layout);
+  const anchorPoint = (line) => {
+    const match = line.split(',').slice(9).join(',').match(/^\{\\an(\d)\\pos\((\d+),(\d+)\)/);
+    return { x: Number(match[2]), y: Number(match[3]) };
+  };
+  const arabic = anchorPoint(dialogueLines(ass, 'Arabic')[0]);
+  const translation = anchorPoint(dialogueLines(ass, 'Translation')[0]);
+  const { scrimTop, scrimHeight } = captionVerticalLayout('center', layout.canvasHeight);
+  const scrimBottom = scrimTop + scrimHeight;
+  assert.ok(
+    arabic.y >= scrimTop && arabic.y <= scrimBottom,
+    `Arabic anchor y=${arabic.y} should fall within the scrim band [${scrimTop}, ${scrimBottom}]`
+  );
+  assert.ok(
+    translation.y >= scrimTop && translation.y <= scrimBottom,
+    `Translation anchor y=${translation.y} should fall within the scrim band [${scrimTop}, ${scrimBottom}]`
+  );
 });
 
 test('a very long translation (real text of Quran 2:282) shrinks the Translation font down to (but not below) the 55% floor', () => {
