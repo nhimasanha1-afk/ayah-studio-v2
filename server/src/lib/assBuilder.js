@@ -187,11 +187,54 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 // per-word timing windows (~200-300ms).
 const TEXT_REVEAL_FADE_MS = 120;
 
+// Gap between the Arabic block and the Translation block, as the font size
+// of an empty spacer line between them (px at 720p; scaled per resolution).
+const CAPTION_BLOCK_GAP_PX = 10;
+
 /**
- * Builds one Arabic Dialogue line per word so the active word is highlighted
- * exactly during its real (or honestly-estimated) timing window, and one
- * Translation Dialogue line per verse. The active word explicitly zeroes its
- * shadow (a drop shadow would blur the highlight) while keeping the outline.
+ * Splits a verse's time window into contiguous, non-overlapping intervals,
+ * one per timed word, each carrying which word is highlighted during it
+ * (wordIndex -1 = none). Contiguity matters now that Arabic and Translation
+ * share ONE event per interval: any gap between words' own timings would
+ * blank the whole caption, and any overlap with the previous verse would
+ * briefly stack two captions.
+ */
+function buildVerseIntervals(verse, highlightEnabled) {
+  const whole = [{ wordIndex: -1, startMs: verse.startMs, endMs: verse.endMs }];
+  if (!highlightEnabled) return whole;
+  const timed = [];
+  verse.words.forEach((w, i) => {
+    if (w.startMs != null && w.endMs != null) timed.push({ i, startMs: w.startMs });
+  });
+  if (timed.length === 0) return whole;
+
+  const starts = [];
+  timed.forEach((t, k) => {
+    const floor = k === 0 ? verse.startMs : starts[k - 1];
+    starts.push(k === 0 ? verse.startMs : Math.min(Math.max(t.startMs, floor), verse.endMs));
+  });
+  const intervals = [];
+  timed.forEach((t, k) => {
+    const endMs = k === timed.length - 1 ? verse.endMs : starts[k + 1];
+    if (endMs > starts[k]) intervals.push({ wordIndex: t.i, startMs: starts[k], endMs });
+  });
+  return intervals.length > 0 ? intervals : whole;
+}
+
+/**
+ * Builds the ASS caption track: one Dialogue event per highlighted-word
+ * interval, each containing BOTH the Arabic line(s) and the Translation
+ * line(s) as a single block. The active word is highlighted (with its
+ * shadow zeroed, since a drop shadow would blur the highlight) while
+ * keeping the outline.
+ *
+ * Why one event instead of separate Arabic/Translation events: separately
+ * anchored events each grow away from their own anchor by however many
+ * lines they wrap to, so the pair's position and extent shifted verse to
+ * verse (a real reported bug -- captions "moving around" through an
+ * export). A single event is laid out by libass as one stacked block and
+ * centered on one point, independent of line counts. See
+ * captionAnchorPosition in layout.js.
  *
  * canvasWidth/canvasHeight/scaleFactor come from the chosen resolution and
  * aspect ratio (see layout.js). translationLanguage is the selected
@@ -219,18 +262,14 @@ export function buildAssSubtitles(
   const translationUsableWidth = canvasWidth - 2 * translationSideMargin;
   const translationCharWidthFactor = AVG_CHAR_WIDTH_FACTOR[scriptForLanguage(translationLanguage)] ?? AVG_CHAR_WIDTH_FACTOR.other;
 
-  // Explicit \pos (see captionAnchorPosition's comment) instead of leaning
-  // on the Style's own Alignment/MarginV -- an explicitly positioned event
-  // is exempt from libass's automatic collision avoidance, which is what
-  // was causing the Arabic/Translation swap.
   const anchor = captionAnchorPosition(
     style.colors.textPosition,
     canvasWidth,
     canvasHeight,
     style.colors.scrim.heightScale ?? 1
   );
-  const arabicPosCmd = `\\an${anchor.an}\\pos(${anchor.x},${anchor.arabicY})`;
-  const translationPosCmd = `\\an${anchor.an}\\pos(${anchor.x},${anchor.translationY})`;
+  const posCmd = `\\an${anchor.an}\\pos(${anchor.x},${anchor.y})`;
+  const spacerFs = Math.max(1, scalePx(CAPTION_BLOCK_GAP_PX, scaleFactor));
 
   for (const verse of captionData.verses) {
     if (verse.startMs == null || verse.endMs == null) continue;
@@ -258,16 +297,13 @@ export function buildAssSubtitles(
     const translationNumberPrefix = style.colors.showAyahNumbers ? `(${verse.verseNumber}) ` : '';
 
     // Bounds this verse's Arabic/Translation font size so neither can wrap
-    // into enough lines to grow into the other's space (see
-    // AVG_CHAR_WIDTH_FACTOR's comment) -- computed once per verse from its
-    // full text length so every per-word Dialogue line for this verse gets
-    // the exact same size (no jitter as the highlighted word changes).
+    // into an unbounded number of lines (see AVG_CHAR_WIDTH_FACTOR's
+    // comment) -- computed once per verse from its full text length so
+    // every event for this verse gets the exact same size (no jitter as
+    // the highlighted word changes).
     const arabicTextLength = words.reduce((sum, w) => sum + w.length, 0) + Math.max(0, words.length - 1) + (markerText ? markerText.length + 1 : 0);
     const arabicFitSize = fittingFontSize(arabicTextLength, arabicFontSize, arabicUsableWidth, MAX_CAPTION_LINES, AVG_CHAR_WIDTH_FACTOR.arabic);
     const arabicFsCmd = arabicFitSize < arabicFontSize ? `\\fs${arabicFitSize}` : '';
-    // \q2 disables libass's own auto-wrap for these events -- only the
-    // explicit \N breaks from wrapWordsIntoLines apply (see its comment).
-    const arabicPrefix = `{${arabicPosCmd}\\q2${fadeCmd}${arabicFsCmd}}`;
     const arabicLineGroups = wrapWordsIntoLines(words, arabicUsableWidth, arabicFitSize, AVG_CHAR_WIDTH_FACTOR.arabic);
     const wordLineIndex = new Array(words.length);
     arabicLineGroups.forEach((group, lineIdx) => group.forEach((wordIdx) => (wordLineIndex[wordIdx] = lineIdx)));
@@ -275,18 +311,20 @@ export function buildAssSubtitles(
     const translationText = translationNumberPrefix + verse.translationText;
     const translationFitSize = fittingFontSize(translationText.length, translationFontSize, translationUsableWidth, MAX_CAPTION_LINES, translationCharWidthFactor);
     const translationFsCmd = translationFitSize < translationFontSize ? `\\fs${translationFitSize}` : '';
-    const translationPrefix = `{${translationPosCmd}${fadeCmd}${translationFsCmd}}`;
+    // {\rTranslation} switches the rest of the event to the Translation
+    // style (font, size, colors, outline); the block position (\an/\pos)
+    // is event-level and stays.
+    const translationBlock = `{\\rTranslation${translationFsCmd}}${escapeAssText(translationText)}`;
+    const gapBlock = `\\N{\\fs${spacerFs}}\\N`;
 
-    for (let i = 0; i < verse.words.length; i++) {
-      const word = verse.words[i];
-      if (word.startMs == null || word.endMs == null) continue;
-
+    const intervals = buildVerseIntervals(verse, style.colors.wordHighlightEnabled);
+    intervals.forEach((interval, intervalIdx) => {
       // Line breaks are fixed per-verse (arabicLineGroups), independent of
       // which word is active -- see wrapWordsIntoLines's comment. Only the
       // ONE line containing the highlighted word gets the highlight-run
       // treatment; every other line renders as plain, untagged text, which
       // (per the note below) shapes and orders correctly on its own.
-      const activeLine = style.colors.wordHighlightEnabled ? wordLineIndex[i] : -1;
+      const activeLine = interval.wordIndex >= 0 ? wordLineIndex[interval.wordIndex] : -1;
       const renderedLines = arabicLineGroups.map((lineWordIndices, lineIdx) => {
         const isLastLine = lineIdx === arabicLineGroups.length - 1;
 
@@ -305,11 +343,11 @@ export function buildAssSubtitles(
         // and no marker), reversing a 1-element array is a no-op.
         const segments = [];
         if (lineIdx === activeLine) {
-          const posInLine = lineWordIndices.indexOf(i);
+          const posInLine = lineWordIndices.indexOf(interval.wordIndex);
           const preWords = lineWordIndices.slice(0, posInLine).map((idx) => words[idx]);
           const postWords = lineWordIndices.slice(posInLine + 1).map((idx) => words[idx]);
           if (preWords.length) segments.push(preWords.join(' '));
-          segments.push(`{\\c${highlightColor}&\\shad0}${words[i]}{\\c${arabicColor}&\\shad${shadowDepth}}`);
+          segments.push(`{\\c${highlightColor}&\\shad0}${words[interval.wordIndex]}{\\c${arabicColor}&\\shad${shadowDepth}}`);
           if (postWords.length) segments.push(postWords.join(' '));
         } else {
           segments.push(lineWordIndices.map((idx) => words[idx]).join(' '));
@@ -319,10 +357,14 @@ export function buildAssSubtitles(
         return segments.length > 1 ? segments.slice().reverse().join(' ') : segments[0];
       });
 
-      lines.push(dialogueLine('Arabic', word.startMs, word.endMs, arabicPrefix + renderedLines.join('\\N')));
-    }
-
-    lines.push(dialogueLine('Translation', verse.startMs, verse.endMs, translationPrefix + escapeAssText(translationText)));
+      // The fade-in belongs to the verse's first event only -- later events
+      // for the same verse show identical text, and re-fading each would
+      // flicker on every word change.
+      const prefix = `{${posCmd}${intervalIdx === 0 ? fadeCmd : ''}${arabicFsCmd}}`;
+      lines.push(
+        dialogueLine('Arabic', interval.startMs, interval.endMs, prefix + renderedLines.join('\\N') + gapBlock + translationBlock)
+      );
+    });
   }
 
   return buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationLanguage) + lines.join('\n') + '\n';

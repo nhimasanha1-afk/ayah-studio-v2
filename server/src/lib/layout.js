@@ -92,80 +92,40 @@ export function overlayPositionExpr(position, size, scaleFactor = 1) {
 const CAPTION_LAYOUT_FRACTIONS = {
   'upper-third': { alignment: 8, arabicMarginV: 50 / 720, translationMarginV: 120 / 720, scrimTop: 30 / 720, scrimHeight: 145 / 720 },
   'lower-third': { alignment: 2, arabicMarginV: 120 / 720, translationMarginV: 50 / 720, scrimTop: 545 / 720, scrimHeight: 145 / 720 },
-  center: { alignment: 5, arabicMarginV: 260 / 720, translationMarginV: 140 / 720, scrimTop: 290 / 720, scrimHeight: 190 / 720 },
+  center: { alignment: 5, arabicMarginV: 260 / 720, translationMarginV: 140 / 720, scrimTop: 265 / 720, scrimHeight: 190 / 720 },
 };
 
 /**
- * Real reported bug: on a downloaded export using the default 'center' text
- * position, the Arabic and Translation caption lines intermittently swapped
- * vertical order -- confirmed on a real production export, and NOT
- * reproducible by re-generating the exact same real verse/style data in
- * isolation, which pointed away from anything in the per-verse text (word
- * count, translation length, {\fs} sizing) and toward libass's own
- * automatic collision-avoidance repositioning: 'center' uses ASS Alignment 5
- * (middle), where -- unlike Alignment 2/8 (bottom/top), which anchor to a
- * genuine screen edge -- MarginV does not carve out two distinct, stable
- * vertical slots for the two styles. Both styles end up wanting the same
- * central position, and it's only libass's collision avoidance (re-run on
- * every one of the many per-word Arabic re-layouts) that keeps them apart --
- * with no guaranteed stacking order, hence the intermittent swap.
+ * Where the whole caption block (Arabic line(s) + Translation line(s), rendered
+ * together as ONE ASS event -- see assBuilder.js) is anchored, as an ASS
+ * alignment override plus a raw canvas-pixel point.
  *
- * The fix: give every caption Dialogue line an explicit {\an<N>\pos(x,y)}
- * override (see assBuilder.js) instead of leaning on the Style's own
- * Alignment/MarginV. Per the ASS spec, an explicitly \pos'd event is exempt
- * from collision avoidance entirely, so this removes the ambiguity at its
- * source rather than working around symptoms. All three textPosition modes
- * are unified onto Alignment 2 (bottom-anchor: text grows upward, away from
- * whatever sits below it -- verified stable across extensive real-frame
- * testing) except 'upper-third', which keeps Alignment 8 (top-anchor, grows
- * downward) since that's the direction its whole layout is built around.
- * This function returns the alignment override to emit and the two styles'
- * anchor Y in raw canvas pixels, both already resolution-scaled.
+ * Real reported bug: on real exports the captions kept changing position
+ * from verse to verse. Root cause: Arabic and Translation used to be two
+ * separate events, each anchored at its own fixed Y and each growing away
+ * from that anchor by however many lines it happened to wrap to -- so the
+ * pair's combined position and extent shifted with every verse's line
+ * counts, and no choice of fixed anchors could keep it centered. Rendering
+ * both lines as a single event lets libass stack them itself and center the
+ * whole block on ONE point, independent of line counts.
+ *
+ * 'center' anchors the block's middle (Alignment 5) on the scrim band's own
+ * vertical center, which is tuned to sit on the canvas's true middle. The
+ * other two modes keep their original edge-anchored semantics: 'upper-third'
+ * pins the block's top edge (Alignment 8) where the Arabic line used to
+ * start; 'lower-third' pins its bottom edge (Alignment 2) where the
+ * Translation line used to end.
  */
-// 'center's arabicMarginV/translationMarginV (in CAPTION_LAYOUT_FRACTIONS)
-// were tuned for ASS Alignment 5, where MarginV does NOT mean "distance from
-// the canvas edge" -- reusing them under that (edge-distance) reading, as
-// captionAnchorPosition first did, put the Translation anchor at y=580 on a
-// 720-tall canvas while the tuned scrim box only spans y=290-480: fully
-// outside it, confirmed on a real export where the Translation line rendered
-// well below the visible scrim. Anchoring 'center' to fractions of the
-// scrim box itself instead -- rather than to any MarginV reading -- ties it
-// to a box that's already tuned and visible, and keeps it correct even if
-// the scrim's own tuning changes later.
-//
-// Values tuned by eye against a real rendered frame with a marker line drawn
-// at the canvas's true vertical center: an initial pass (0.55/0.85) kept
-// each line comfortably inside the scrim band but, per a real follow-up
-// report, left the Arabic+Translation PAIR's combined midpoint sitting
-// visibly below true center rather than centered on it -- the earlier tuning
-// checked "is each line inside the box" but not "does the pair's own middle
-// land on the canvas's middle". Re-tuned so the two lines' combined vertical
-// center lands on the canvas's true center (confirmed against both a
-// one-line and a two-line Translation case).
-const CENTER_MODE_SCRIM_FRACTIONS = { arabic: 0.34, translation: 0.64 };
-
 export function captionAnchorPosition(textPosition, canvasWidth, canvasHeight, scrimHeightScale = 1) {
   const { alignment, arabicMarginV, translationMarginV, scrimTop, scrimHeight } = captionVerticalLayout(
     textPosition,
     canvasHeight,
     scrimHeightScale
   );
-  const renderAlignment = alignment === 8 ? 8 : 2;
-  if (textPosition === 'center') {
-    return {
-      an: renderAlignment,
-      x: Math.round(canvasWidth / 2),
-      arabicY: Math.round(scrimTop + CENTER_MODE_SCRIM_FRACTIONS.arabic * scrimHeight),
-      translationY: Math.round(scrimTop + CENTER_MODE_SCRIM_FRACTIONS.translation * scrimHeight),
-    };
-  }
-  const anchorY = (marginV) => (renderAlignment === 8 ? marginV : canvasHeight - marginV);
-  return {
-    an: renderAlignment,
-    x: Math.round(canvasWidth / 2),
-    arabicY: anchorY(arabicMarginV),
-    translationY: anchorY(translationMarginV),
-  };
+  const x = Math.round(canvasWidth / 2);
+  if (alignment === 8) return { an: 8, x, y: arabicMarginV };
+  if (alignment === 2) return { an: 2, x, y: canvasHeight - translationMarginV };
+  return { an: 5, x, y: Math.round(scrimTop + scrimHeight / 2) };
 }
 
 /**

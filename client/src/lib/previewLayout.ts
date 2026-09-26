@@ -14,7 +14,7 @@ const PAD_PCT_Y = (40 / VIDEO_HEIGHT) * 100;
 export function scrimStyle(textPosition: TextPosition, heightScale = 1): React.CSSProperties {
   const bands: Record<TextPosition, { top: number; height: number }> = {
     'upper-third': { top: 30, height: 145 },
-    center: { top: 290, height: 190 },
+    center: { top: 265, height: 190 },
     'lower-third': { top: 545, height: 145 },
   };
   const band = bands[textPosition];
