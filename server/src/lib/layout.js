@@ -92,8 +92,20 @@ export function overlayPositionExpr(position, size, scaleFactor = 1) {
 const CAPTION_LAYOUT_FRACTIONS = {
   'upper-third': { alignment: 8, arabicMarginV: 50 / 720, translationMarginV: 120 / 720, scrimTop: 30 / 720, scrimHeight: 145 / 720 },
   'lower-third': { alignment: 2, arabicMarginV: 120 / 720, translationMarginV: 50 / 720, scrimTop: 545 / 720, scrimHeight: 145 / 720 },
-  center: { alignment: 5, arabicMarginV: 260 / 720, translationMarginV: 140 / 720, scrimTop: 265 / 720, scrimHeight: 190 / 720 },
+  center: { alignment: 5, arabicMarginV: 260 / 720, translationMarginV: 140 / 720, scrimTop: 235 / 720, scrimHeight: 250 / 720 },
 };
+
+/**
+ * How the chosen Arabic/Translation font size (the slider values, e.g. 60 and
+ * 32) maps to text size on screen: the em is size * CAPTION_SIZE_FACTOR px on
+ * a 1280-wide canvas, scaled up proportionally for larger canvases. The live
+ * preview applies the same rule to its own width (see previewLayout.ts), so
+ * preview and export show the same proportion of the frame at any window
+ * size or resolution. 0.7 keeps the preview looking as it does in a ~1100px
+ * wide preview pane (the previous fixed 0.6px-per-unit rule); the export used
+ * to render noticeably smaller than that (see fontMetrics.js).
+ */
+export const CAPTION_SIZE_FACTOR = 0.7;
 
 /**
  * Where the whole caption block (Arabic line(s) + Translation line(s), rendered

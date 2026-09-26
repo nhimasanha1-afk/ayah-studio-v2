@@ -1,8 +1,10 @@
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { buildAssSubtitles } from '../src/lib/assBuilder.js';
 import { resolveStyle } from '../src/lib/styleConfig.js';
-import { captionVerticalLayout } from '../src/lib/layout.js';
+import { captionVerticalLayout, CAPTION_SIZE_FACTOR } from '../src/lib/layout.js';
+import { libassEmScale } from '../src/lib/fontMetrics.js';
 
 const layout = { canvasWidth: 1280, canvasHeight: 720, scaleFactor: 1 };
 
@@ -399,4 +401,62 @@ test('a multi-line verse keeps identical line breaks no matter which word is hig
   for (let i = 1; i < events.length; i++) {
     assert.deepEqual(lineWordCounts(events[i]), first, `word ${i}'s per-line word counts differ from word 0's -- line breaks are unstable`);
   }
+});
+
+// Regression tests for a real reported bug: exported captions looked
+// noticeably smaller than the same chosen size in the app preview. libass
+// treats the requested font size as the font's whole line box (ascent +
+// descent), not the em a browser uses, so Noto Naskh Arabic rendered at only
+// ~49% of the preview's glyph size (Noto Sans ~66%). Font sizes are now
+// divided by each font's measured libass scale (fontMetrics.js) and mapped
+// through CAPTION_SIZE_FACTOR so the export matches the preview.
+function styleFontSize(assText, styleName) {
+  const line = assText.split('\n').find((l) => l.startsWith(`Style: ${styleName},`));
+  return Number(line.split(',')[2]);
+}
+
+test('libassEmScale reproduces the ratios measured by rendering the same text in libass and in a browser', () => {
+  const dir = fileURLToPath(new URL('../assets/fonts/', import.meta.url));
+  const near = (actual, expected) => Math.abs(actual - expected) < 0.02;
+  assert.ok(near(libassEmScale(`${dir}NotoNaskhArabic-Regular.ttf`), 0.486), 'Noto Naskh Arabic');
+  assert.ok(near(libassEmScale(`${dir}Amiri-Regular.ttf`), 0.361), 'Amiri');
+  assert.ok(near(libassEmScale(`${dir}NotoSans-Regular.ttf`), 0.658), 'Noto Sans');
+  assert.ok(near(libassEmScale(`${dir}NotoSansThai-Regular.ttf`), 0.658), 'Noto Sans Thai');
+  assert.equal(libassEmScale(`${dir}Inter-Regular.ttf`), 0.758, 'Inter (2048 upm, pinned to its measured value)');
+});
+
+test('the ASS font size is the chosen size scaled by CAPTION_SIZE_FACTOR and compensated for the font\'s libass scale, so glyphs match the preview', () => {
+  const dir = fileURLToPath(new URL('../assets/fonts/', import.meta.url));
+  const style = resolveStyle({ typography: { arabicFontSize: 60, translationFontSize: 32 } });
+  const ass = buildAssSubtitles(captionData, style, layout);
+  const expectedArabic = Math.round((60 * CAPTION_SIZE_FACTOR) / libassEmScale(`${dir}NotoNaskhArabic-Regular.ttf`));
+  const expectedTranslation = Math.round((32 * CAPTION_SIZE_FACTOR) / libassEmScale(`${dir}NotoSans-Regular.ttf`));
+  assert.equal(styleFontSize(ass, 'Arabic'), expectedArabic);
+  assert.equal(styleFontSize(ass, 'Translation'), expectedTranslation);
+  // Naskh must come out bigger than the raw setting -- the pre-fix export
+  // used the setting as-is and so rendered glyphs at under half the preview's size.
+  assert.ok(styleFontSize(ass, 'Arabic') > 60);
+});
+
+test('the same chosen size gives the same proportion of the frame at every resolution (4K header sizes are 3x the 720p ones)', () => {
+  const style = resolveStyle();
+  const at720 = buildAssSubtitles(captionData, style, layout);
+  const at4k = buildAssSubtitles(captionData, style, { canvasWidth: 3840, canvasHeight: 2160, scaleFactor: 3 });
+  for (const styleName of ['Arabic', 'Translation']) {
+    assert.ok(Math.abs(styleFontSize(at4k, styleName) - 3 * styleFontSize(at720, styleName)) <= 2, styleName);
+  }
+});
+
+test('an ordinary verse is NOT shrunk (only verses too tall to fit on screen are), so text stays at the chosen size like the preview', () => {
+  const style = resolveStyle();
+  const ordinary = {
+    verses: [{
+      startMs: 0, endMs: 3000, verseNumber: 18,
+      translationText: '(Se os houvesses visto), terias acreditado que estavam despertos, apesar de estarem dormindo, pois Nós os virávamos, ora para a direita, ora para a esquerda, enquanto o seu cão dormia, com as patas estendidas, na entrada da caverna.',
+      words: Array.from({ length: 25 }, (_, i) => ({ text: ['وَتَحْسَبُهُمْ', 'أَيْقَاظًا', 'وَهُمْ', 'رُقُودٌ', 'ذَاتَ'][i % 5], startMs: i * 100, endMs: (i + 1) * 100 })),
+    }],
+  };
+  const { arabicFs, translationFs } = parseEvent(captionEvents(buildAssSubtitles(ordinary, style, layout))[0]);
+  assert.equal(arabicFs, null);
+  assert.equal(translationFs, null);
 });

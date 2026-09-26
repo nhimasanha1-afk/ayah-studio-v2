@@ -59,8 +59,8 @@ test('captionVerticalLayout: same textPosition mode looks proportionally identic
 test('captionVerticalLayout: same fractions carry correctly to a tall 9:16 canvas', () => {
   const layout = captionVerticalLayout('center', 1280); // 9:16 @ 720p height
   // scrimTop fraction is 265/720 (band centered on the canvas's true middle);
-  // applied to height 1280 that's ~471.
-  assert.equal(layout.scrimTop, Math.round((265 / 720) * 1280));
+  // applied to height 1280 that's ~418.
+  assert.equal(layout.scrimTop, Math.round((235 / 720) * 1280));
 });
 
 test('captionVerticalLayout: heightScale of 1 (the default) is pixel-identical to omitting it entirely', () => {

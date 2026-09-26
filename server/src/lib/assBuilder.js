@@ -1,5 +1,8 @@
+import path from 'node:path';
 import { hexToAssColor } from './colorUtils.js';
-import { captionVerticalLayout, captionAnchorPosition } from './layout.js';
+import { captionVerticalLayout, captionAnchorPosition, CAPTION_SIZE_FACTOR } from './layout.js';
+import { libassEmScale } from './fontMetrics.js';
+import { FONTS_DIR } from './paths.js';
 import { FONT_REGISTRY, TRANSLATION_SCRIPT_FONTS } from './styleConfig.js';
 import { scriptForLanguage } from './translationFonts.js';
 import { toArabicIndicNumerals } from './arabicNumerals.js';
@@ -14,15 +17,15 @@ import { toArabicIndicNumerals } from './arabicNumerals.js';
  * user's latin font choice when translationLanguage is unset, so existing
  * callers (tests, older API bodies) keep their current behavior.
  */
-function resolveTranslationFontFamily(style, translationLanguage) {
+function resolveTranslationFont(style, translationLanguage) {
   const script = scriptForLanguage(translationLanguage);
   if (script === 'latin' || script === 'cyrillic') {
-    return FONT_REGISTRY.latin[style.typography.latinFont].family;
+    return { ...FONT_REGISTRY.latin[style.typography.latinFont], script, fontKey: style.typography.latinFont };
   }
   if (script === 'arabic') {
-    return FONT_REGISTRY.arabic['noto-naskh'].family;
+    return { ...FONT_REGISTRY.arabic['noto-naskh'], script, fontKey: 'noto-naskh' };
   }
-  return TRANSLATION_SCRIPT_FONTS[script].family;
+  return { ...TRANSLATION_SCRIPT_FONTS[script], script, fontKey: script };
 }
 
 function formatAssTime(ms) {
@@ -50,58 +53,74 @@ function captionSideMargins(scaleFactor) {
   return { sideMargin: scalePx(60, scaleFactor), translationSideMargin: scalePx(80, scaleFactor) };
 }
 
-// Average glyph advance width as a fraction of font size, per script bucket
-// -- calibrated by rendering real test frames at known font sizes/canvas
-// widths and measuring the exact character count where libass's automatic
-// wrapping kicked in (not guessed): Arabic's cursive joining and
-// non-advancing diacritics pack far more characters per line than Latin at
-// the same font size (measured ~175 chars/line at 60px over 1160px usable
-// width vs Latin's ~110 chars/line at 32px over 1120px). Each constant is
-// nudged slightly above its measured value so the line-count estimate below
-// errs toward shrinking a touch early rather than missing a wrap -- the
-// failure mode of underestimating width is the exact overlap bug this
-// exists to prevent. Untested "other" scripts (CJK, Indic, etc., rendered
-// via TRANSLATION_SCRIPT_FONTS) use a wide, conservative placeholder since
-// most of those glyphs are visually squarer/wider than Latin.
+// Average glyph advance width as a fraction of the ASS font size, per script
+// bucket -- calibrated by rendering real test frames and measuring the exact
+// character count where wrapping kicked in (not guessed): Arabic's cursive
+// joining and non-advancing diacritics pack far more characters per line
+// than Latin at the same size (measured ~175 chars/line at 60px over 1160px
+// usable width vs Latin's ~110 chars/line at 32px over 1120px). Each constant
+// is nudged slightly above its measured value so the estimate errs toward
+// wrapping a touch early rather than late. Measured on Noto Naskh Arabic and
+// Noto Sans; other fonts are scaled from those by FONT_WIDTH_MULTIPLIER
+// (measured: rendering the same Arabic string, Amiri came out 0.68x and
+// Scheherazade New 1.72x the width of Noto Naskh; Inter 1.065x Noto Sans).
+// Untested "other" scripts (CJK, Indic, etc.) use a wide, conservative
+// placeholder since most of those glyphs are squarer/wider than Latin.
 const AVG_CHAR_WIDTH_FACTOR = { arabic: 0.12, latin: 0.33, cyrillic: 0.33, other: 0.6 };
+const FONT_WIDTH_MULTIPLIER = { amiri: 0.75, scheherazade: 1.8, inter: 1.1 };
 
-// Real reported bug: on a downloaded export, the Arabic and Translation
-// caption lines appeared to "swap" -- the Arabic line ended up sitting
-// below/overlapped by the Translation text. Root cause (confirmed by
-// rendering real test frames and reading back pixel rows): both styles are
-// bottom-anchored (see captionVerticalLayout) with libass's default
-// WrapStyle, so a long verse's translation (which has no length cap -- a
-// single verse's translated meaning can run to several sentences) wraps
-// into as many lines as it takes and grows straight UP from its anchor with
-// no bound, eventually climbing above the Arabic line's own fixed position
-// and visually inverting the reading order. Bounding both styles to a
-// small max line count via a per-verse {\fs} downscale keeps each block's
-// footprint predictable regardless of verse/translation length, so neither
-// can grow into the other's space. The Arabic line itself never collides
-// the other direction (it's the one closer to the bottom edge, so extra
-// lines grow away from Translation) but is capped too so an outlier's
-// wordy verse doesn't swing between a single line and filling the screen.
-const MAX_CAPTION_LINES = 2;
-// Never shrink below this fraction of the user's chosen size -- a rare,
-// extremely long verse (e.g. Al-Baqarah 2:282, the Qur'an's longest at
-// ~130 words) hitting the floor may still take a 3rd line; that's an
-// acceptable, rare tradeoff against the alternative of illegibly tiny text.
-const MIN_FONT_SCALE = 0.55;
+// The two caption blocks together may take at most this fraction of the
+// canvas height; a verse that would need more is scaled down (both blocks by
+// the same factor, so their proportion holds), but never below MIN_FONT_SCALE.
+// This replaces an earlier per-block "max 2 lines" rule that existed to keep
+// separately anchored blocks from growing into each other -- with both lines
+// in ONE event that can't happen, and the rule shrank text well below the
+// chosen size on ordinary verses (the preview never shrinks), so it now only
+// kicks in for verses too long to fit on screen at all.
+const MAX_BLOCK_HEIGHT_FRACTION = 0.62;
+const MIN_FONT_SCALE = 0.5;
 
 /**
- * The largest font size (in px, already resolution-scaled) that keeps
- * `text` within `maxLines` lines at `usableWidthPx`, estimated from average
- * glyph width rather than real shaping (real text layout isn't available
- * here without a heavy rendering dependency) -- see AVG_CHAR_WIDTH_FACTOR's
- * comment for how that estimate was calibrated and why it's biased safe.
- * Never returns more than baseFontSizePx, and never less than
- * MIN_FONT_SCALE of it.
+ * ASS font sizes and width factors for both caption lines. The chosen sizes
+ * are treated as browser-style px on the 720p-reference canvas and scaled by
+ * CAPTION_SIZE_FACTOR (see layout.js) so the export matches the live preview;
+ * dividing by the font's libass em scale (see fontMetrics.js) compensates
+ * for libass sizing the whole line box rather than the em.
  */
-function fittingFontSize(textLength, baseFontSizePx, usableWidthPx, maxLines, avgCharWidthFactor) {
-  const minFontSizePx = Math.max(1, Math.round(baseFontSizePx * MIN_FONT_SCALE));
-  if (textLength <= 0 || usableWidthPx <= 0) return baseFontSizePx;
-  const maxSizeForLineCount = (maxLines * usableWidthPx) / (textLength * avgCharWidthFactor);
-  return Math.max(minFontSizePx, Math.min(baseFontSizePx, Math.floor(maxSizeForLineCount)));
+function captionFonts(style, scaleFactor, translationLanguage) {
+  const arabicKey = style.typography.arabicFont;
+  const arabicFont = FONT_REGISTRY.arabic[arabicKey];
+  const translationFont = resolveTranslationFont(style, translationLanguage);
+  const toAssSize = (setting, font) =>
+    Math.max(1, Math.round((setting * CAPTION_SIZE_FACTOR * scaleFactor) / libassEmScale(path.join(FONTS_DIR, font.file))));
+  const bucketFactor = AVG_CHAR_WIDTH_FACTOR[translationFont.script] ?? AVG_CHAR_WIDTH_FACTOR.other;
+  return {
+    arabicFamily: arabicFont.family,
+    translationFamily: translationFont.family,
+    arabicFs: toAssSize(style.typography.arabicFontSize, arabicFont),
+    translationFs: toAssSize(style.typography.translationFontSize, translationFont),
+    arabicWidthFactor: AVG_CHAR_WIDTH_FACTOR.arabic * (FONT_WIDTH_MULTIPLIER[arabicKey] ?? 1),
+    translationWidthFactor: bucketFactor * (FONT_WIDTH_MULTIPLIER[translationFont.fontKey] ?? 1),
+  };
+}
+
+/**
+ * The largest scale (1 = the chosen size) at which this verse's whole
+ * caption block -- Arabic lines, gap, Translation lines, each line one font
+ * size tall in libass -- fits within MAX_BLOCK_HEIGHT_FRACTION of the canvas.
+ * Line counts come from the same calibrated width model used to wrap, at
+ * each candidate scale.
+ */
+function fitBlockScale({ words, arabicFs, arabicUsableWidth, arabicWidthFactor, translationLength, translationFs, translationUsableWidth, translationWidthFactor, gapPx, canvasHeight }) {
+  const budget = canvasHeight * MAX_BLOCK_HEIGHT_FRACTION;
+  for (let scale = 1; scale > MIN_FONT_SCALE; scale = Math.round((scale - 0.05) * 100) / 100) {
+    const aFs = Math.max(1, Math.round(arabicFs * scale));
+    const tFs = Math.max(1, Math.round(translationFs * scale));
+    const arabicLines = wrapWordsIntoLines(words, arabicUsableWidth, aFs, arabicWidthFactor).length;
+    const translationLines = Math.max(1, Math.ceil((translationLength * tFs * translationWidthFactor) / translationUsableWidth));
+    if (arabicLines * aFs + gapPx + translationLines * tFs <= budget) return scale;
+  }
+  return MIN_FONT_SCALE;
 }
 
 /**
@@ -125,8 +144,8 @@ function fittingFontSize(textLength, baseFontSizePx, usableWidthPx, maxLines, av
  * override tags at all and so shapes/orders correctly on its own (per the
  * existing comment: "an unbroken plain-text run... shapes and orders
  * correctly on its own"). Uses the same calibrated character-width model as
- * fittingFontSize; the caller disables libass's own auto-wrap for these
- * events (\q2) so only these explicit breaks ever apply.
+ * fitBlockScale, and the breaks are conservative (lines come out a bit
+ * narrower than the screen allows) so libass never needs to re-wrap them.
  */
 function wrapWordsIntoLines(words, usableWidthPx, fontSizePx, avgCharWidthFactor) {
   const capacityChars = Math.max(1, usableWidthPx / (fontSizePx * avgCharWidthFactor));
@@ -150,8 +169,11 @@ function wrapWordsIntoLines(words, usableWidthPx, fontSizePx, avgCharWidthFactor
 }
 
 function buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationLanguage) {
-  const arabicFamily = FONT_REGISTRY.arabic[style.typography.arabicFont].family;
-  const translationFamily = resolveTranslationFontFamily(style, translationLanguage);
+  const { arabicFamily, translationFamily, arabicFs: arabicFontSize, translationFs: translationFontSize } = captionFonts(
+    style,
+    scaleFactor,
+    translationLanguage
+  );
 
   const arabicColor = hexToAssColor(style.colors.arabicTextColor);
   const translationColor = hexToAssColor(style.colors.translationTextColor);
@@ -159,8 +181,6 @@ function buildHeader(style, canvasWidth, canvasHeight, scaleFactor, translationL
 
   const { alignment, arabicMarginV, translationMarginV } = captionVerticalLayout(style.colors.textPosition, canvasHeight);
   const scaled = (px) => scalePx(px, scaleFactor);
-  const arabicFontSize = scaled(style.typography.arabicFontSize);
-  const translationFontSize = scaled(style.typography.translationFontSize);
   const outlineWidth = Math.max(1, scaled(style.colors.outlineWidth));
   const shadowDepth = scaled(style.colors.shadowDepth);
   const { sideMargin, translationSideMargin } = captionSideMargins(scaleFactor);
@@ -255,12 +275,10 @@ export function buildAssSubtitles(
   const fadeCmd = style.colors.textRevealAnimation === 'fade' ? `\\fad(${TEXT_REVEAL_FADE_MS},0)` : '';
   const lines = [];
 
-  const arabicFontSize = scalePx(style.typography.arabicFontSize, scaleFactor);
-  const translationFontSize = scalePx(style.typography.translationFontSize, scaleFactor);
+  const { arabicFs, translationFs, arabicWidthFactor, translationWidthFactor } = captionFonts(style, scaleFactor, translationLanguage);
   const { sideMargin, translationSideMargin } = captionSideMargins(scaleFactor);
   const arabicUsableWidth = canvasWidth - 2 * sideMargin;
   const translationUsableWidth = canvasWidth - 2 * translationSideMargin;
-  const translationCharWidthFactor = AVG_CHAR_WIDTH_FACTOR[scriptForLanguage(translationLanguage)] ?? AVG_CHAR_WIDTH_FACTOR.other;
 
   const anchor = captionAnchorPosition(
     style.colors.textPosition,
@@ -296,21 +314,32 @@ export function buildAssSubtitles(
       : null;
     const translationNumberPrefix = style.colors.showAyahNumbers ? `(${verse.verseNumber}) ` : '';
 
-    // Bounds this verse's Arabic/Translation font size so neither can wrap
-    // into an unbounded number of lines (see AVG_CHAR_WIDTH_FACTOR's
-    // comment) -- computed once per verse from its full text length so
-    // every event for this verse gets the exact same size (no jitter as
-    // the highlighted word changes).
-    const arabicTextLength = words.reduce((sum, w) => sum + w.length, 0) + Math.max(0, words.length - 1) + (markerText ? markerText.length + 1 : 0);
-    const arabicFitSize = fittingFontSize(arabicTextLength, arabicFontSize, arabicUsableWidth, MAX_CAPTION_LINES, AVG_CHAR_WIDTH_FACTOR.arabic);
-    const arabicFsCmd = arabicFitSize < arabicFontSize ? `\\fs${arabicFitSize}` : '';
-    const arabicLineGroups = wrapWordsIntoLines(words, arabicUsableWidth, arabicFitSize, AVG_CHAR_WIDTH_FACTOR.arabic);
+    // Scales this verse's two font sizes down together ONLY if the whole
+    // block would not fit on screen at the chosen size (see
+    // MAX_BLOCK_HEIGHT_FRACTION) -- computed once per verse so every event
+    // for this verse gets the exact same sizes (no jitter as the highlighted
+    // word changes).
+    const translationText = translationNumberPrefix + verse.translationText;
+    const blockScale = fitBlockScale({
+      words,
+      arabicFs,
+      arabicUsableWidth,
+      arabicWidthFactor,
+      translationLength: translationText.length,
+      translationFs,
+      translationUsableWidth,
+      translationWidthFactor,
+      gapPx: spacerFs,
+      canvasHeight,
+    });
+    const arabicFitSize = Math.max(1, Math.round(arabicFs * blockScale));
+    const translationFitSize = Math.max(1, Math.round(translationFs * blockScale));
+    const arabicFsCmd = arabicFitSize < arabicFs ? `\\fs${arabicFitSize}` : '';
+    const arabicLineGroups = wrapWordsIntoLines(words, arabicUsableWidth, arabicFitSize, arabicWidthFactor);
     const wordLineIndex = new Array(words.length);
     arabicLineGroups.forEach((group, lineIdx) => group.forEach((wordIdx) => (wordLineIndex[wordIdx] = lineIdx)));
 
-    const translationText = translationNumberPrefix + verse.translationText;
-    const translationFitSize = fittingFontSize(translationText.length, translationFontSize, translationUsableWidth, MAX_CAPTION_LINES, translationCharWidthFactor);
-    const translationFsCmd = translationFitSize < translationFontSize ? `\\fs${translationFitSize}` : '';
+    const translationFsCmd = translationFitSize < translationFs ? `\\fs${translationFitSize}` : '';
     // {\rTranslation} switches the rest of the event to the Translation
     // style (font, size, colors, outline); the block position (\an/\pos)
     // is event-level and stays.

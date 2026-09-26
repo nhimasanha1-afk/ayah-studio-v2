@@ -14,7 +14,7 @@ const PAD_PCT_Y = (40 / VIDEO_HEIGHT) * 100;
 export function scrimStyle(textPosition: TextPosition, heightScale = 1): React.CSSProperties {
   const bands: Record<TextPosition, { top: number; height: number }> = {
     'upper-third': { top: 30, height: 145 },
-    center: { top: 265, height: 190 },
+    center: { top: 235, height: 250 },
     'lower-third': { top: 545, height: 145 },
   };
   const band = bands[textPosition];
@@ -41,3 +41,13 @@ export function badgePositionStyle(position: BadgePosition): React.CSSProperties
   }
   return style;
 }
+
+/**
+ * Mirrors server/src/lib/layout.js's CAPTION_SIZE_FACTOR: the chosen
+ * Arabic/Translation size maps to an em of size * 0.7 px on a 1280-wide
+ * (720-wide for 9:16) canvas, scaled with the frame's actual width, so the
+ * preview shows the same proportion of the frame the export does at any
+ * window size. (The preview used to use a fixed 0.6 CSS px per unit, which
+ * only matched a ~1100px-wide preview.)
+ */
+export const CAPTION_SIZE_FACTOR = 0.7;

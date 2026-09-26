@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBackgroundLibrary, usePreviewData } from '../lib/hooks';
-import { badgePositionStyle, scrimStyle } from '../lib/previewLayout';
+import { badgePositionStyle, CAPTION_SIZE_FACTOR, scrimStyle } from '../lib/previewLayout';
 import { FONT_REGISTRY } from '../lib/types';
 import { isRtlScript, scriptForLanguage, TRANSLATION_SCRIPT_FONTS } from '../lib/translationFonts';
 import { toArabicIndicNumerals } from '../lib/arabicNumerals';
@@ -53,6 +53,17 @@ export function PreviewPane() {
   const uploadedCardImages = useExportConfigStore((s) => s.uploadedCardImages);
   const previewClipId = useExportConfigStore((s) => s.previewClipId);
   const setPreviewClip = useExportConfigStore((s) => s.setPreviewClip);
+
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frameWidth, setFrameWidth] = useState(0);
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setFrameWidth(el.clientWidth));
+    observer.observe(el);
+    setFrameWidth(el.clientWidth);
+    return () => observer.disconnect();
+  }, []);
 
   const preview = usePreviewData(chapterId, reciterId, translationId);
   const library = useBackgroundLibrary();
@@ -352,11 +363,22 @@ export function PreviewPane() {
   }, [currentVerse, phaseElapsedMs, phase]);
 
   const isVertical = aspectRatio === '9:16';
+  // Caption text scales with the preview frame's own width, by the same rule
+  // the export uses (see CAPTION_SIZE_FACTOR), so a caption takes the same
+  // share of the frame in the preview as in the downloaded video whatever the
+  // window size. Before the first measurement, fall back to the old fixed
+  // 0.6px-per-unit look.
+  const captionRefWidth = isVertical ? 720 : 1280;
+  const captionEmPx = (setting: number) =>
+    frameWidth > 0
+      ? setting * CAPTION_SIZE_FACTOR * (frameWidth / captionRefWidth)
+      : Math.round(setting * 0.6);
   const activeCardBackground = phase === 'intro' ? introCardBackground : phase === 'outro' ? outroCardBackground : null;
 
   return (
     <div className="space-y-2">
       <div
+        ref={frameRef}
         className={`relative overflow-hidden rounded-lg border border-neutral-800 bg-black ${isVertical ? 'mx-auto' : 'w-full'}`}
         style={
           isVertical
@@ -548,7 +570,7 @@ export function PreviewPane() {
                     dir="rtl"
                     style={{
                       fontFamily: FONT_REGISTRY.arabic[style.typography.arabicFont].family,
-                      fontSize: Math.round(style.typography.arabicFontSize * 0.6),
+                      fontSize: captionEmPx(style.typography.arabicFontSize),
                       color: style.colors.arabicTextColor,
                       WebkitTextStroke: `${style.colors.outlineWidth * 0.5}px ${style.colors.outlineColor}`,
                     }}
@@ -572,7 +594,7 @@ export function PreviewPane() {
                     dir={isRtlScript(translationScript) ? 'rtl' : undefined}
                     style={{
                       fontFamily: translationFontFamily,
-                      fontSize: Math.round(style.typography.translationFontSize * 0.6),
+                      fontSize: captionEmPx(style.typography.translationFontSize),
                       color: style.colors.translationTextColor,
                     }}
                   >
