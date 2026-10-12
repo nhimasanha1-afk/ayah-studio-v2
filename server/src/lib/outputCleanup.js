@@ -158,3 +158,43 @@ export function enforceOutputSizeCap(outputDir, maxTotalBytes = OUTPUT_SIZE_CAP_
 
   return { deleted, freedBytes };
 }
+
+// Scratch the export pipeline creates under TMP_DIR that can be many GB
+// (rotation segment dirs, flattened backgrounds). A normal export deletes
+// its own in a finally block, but a hard crash (OOM kill, the platform
+// restarting the instance) can't run it -- and TMP_DIR is on the container's
+// own disk, which has a hard cap (a real instance died on it).
+const STALE_SCRATCH_PREFIXES = ['bgrotation-', 'bg-flattened-'];
+
+/**
+ * Deletes orphaned export scratch from tmpDir. Only safe to call when no
+ * export can be running -- i.e. at process startup, since jobs live in this
+ * process's memory and so cannot outlive it. Returns the bytes freed.
+ */
+export function sweepStaleExportScratch(tmpDir) {
+  let freedBytes = 0;
+  const deleted = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(tmpDir, { withFileTypes: true });
+  } catch {
+    return { deleted, freedBytes };
+  }
+  const sizeOf = (p) => {
+    const st = fs.statSync(p);
+    if (!st.isDirectory()) return st.size;
+    return fs.readdirSync(p).reduce((sum, name) => sum + sizeOf(path.join(p, name)), 0);
+  };
+  for (const entry of entries) {
+    if (!STALE_SCRATCH_PREFIXES.some((prefix) => entry.name.startsWith(prefix))) continue;
+    const full = path.join(tmpDir, entry.name);
+    try {
+      freedBytes += sizeOf(full);
+      fs.rmSync(full, { recursive: true, force: true });
+      deleted.push(entry.name);
+    } catch {
+      // best-effort: a file that can't be removed now is retried next startup
+    }
+  }
+  return { deleted, freedBytes };
+}

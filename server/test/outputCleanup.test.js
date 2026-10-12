@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { cleanupOldOutputs, enforceOutputSizeCap, markOutputActive, markOutputInactive } from '../src/lib/outputCleanup.js';
+import { cleanupOldOutputs, enforceOutputSizeCap, markOutputActive, markOutputInactive, sweepStaleExportScratch } from '../src/lib/outputCleanup.js';
 
 function withTempDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'outputcleanup-test-'));
@@ -203,4 +203,33 @@ test('a large recent file still counts toward the total even though it cannot it
     assert.deepEqual(deleted, ['old.mp4']);
     assert.ok(fs.existsSync(recent));
   });
+});
+
+// Real production failure: the container's own disk (where TMP_DIR lives)
+// has a hard 18GB cap and a hard crash can't run an export's finally block,
+// leaving rotation segments behind.
+test('sweepStaleExportScratch removes orphaned rotation scratch (dirs and files) and reports real freed bytes, leaving other files alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scratch-sweep-'));
+  try {
+    const segDir = path.join(dir, 'bgrotation-abc');
+    fs.mkdirSync(segDir);
+    fs.writeFileSync(path.join(segDir, 'segment-0000.mp4'), Buffer.alloc(1000));
+    fs.writeFileSync(path.join(segDir, 'segment-0001.mp4'), Buffer.alloc(2000));
+    fs.writeFileSync(path.join(dir, 'bg-flattened-xyz.mp4'), Buffer.alloc(3000));
+    fs.writeFileSync(path.join(dir, 'captions-8-7.ass'), 'keep');
+    fs.writeFileSync(path.join(dir, 'logo-upload-1.tmp'), 'keep');
+
+    const result = sweepStaleExportScratch(dir);
+    assert.deepEqual(result.deleted.sort(), ['bg-flattened-xyz.mp4', 'bgrotation-abc']);
+    assert.equal(result.freedBytes, 6000);
+    assert.ok(!fs.existsSync(segDir));
+    assert.ok(fs.existsSync(path.join(dir, 'captions-8-7.ass')));
+    assert.ok(fs.existsSync(path.join(dir, 'logo-upload-1.tmp')));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sweepStaleExportScratch on a missing directory is a harmless no-op', () => {
+  assert.deepEqual(sweepStaleExportScratch(path.join(os.tmpdir(), 'does-not-exist-xyz')), { deleted: [], freedBytes: 0 });
 });

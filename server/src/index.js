@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import exportRouter from './routes/export.js';
 import uploadsRouter from './routes/uploads.js';
 import { OUTPUT_DIR, LOGO_UPLOADS_DIR, BACKGROUND_UPLOADS_DIR, CARD_IMAGE_UPLOADS_DIR, TMP_DIR } from './lib/paths.js';
-import { cleanupOldOutputs, enforceOutputSizeCap } from './lib/outputCleanup.js';
+import { cleanupOldOutputs, enforceOutputSizeCap, sweepStaleExportScratch } from './lib/outputCleanup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = OUTPUT_DIR;
@@ -44,6 +44,13 @@ function sweepOldOutputs() {
 }
 sweepOldOutputs();
 setInterval(sweepOldOutputs, 60 * 60 * 1000);
+
+// No export can be running at startup (jobs live in this process's memory),
+// so any rotation scratch left in tmpDir is an orphan from a crash.
+const scratch = sweepStaleExportScratch(tmpDir);
+if (scratch.deleted.length > 0) {
+  console.log(`[outputCleanup] removed ${scratch.deleted.length} orphaned export scratch item(s), freed ${(scratch.freedBytes / 1024 / 1024).toFixed(1)}MB`);
+}
 
 const app = express();
 app.locals.outputDir = outputDir;

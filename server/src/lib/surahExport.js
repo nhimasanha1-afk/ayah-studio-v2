@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { ffmpegPath as ffmpegPathBin } from './ffmpegBinaries.js';
 import { probe } from './ffmpeg.js';
 import { fetchChapter, fetchVerses, fetchReciterAudioFile } from './quranApi.js';
@@ -17,7 +16,7 @@ import { ensureBackgroundClipCached } from './backgroundCache.js';
 import { isUploadedBackgroundClipId, resolveUploadedBackgroundVideoPath } from './backgroundVideoUpload.js';
 import { isUploadedCardImageId, resolveUploadedCardImagePath } from './cardImageUpload.js';
 import { resolvePlaybackOrder, planBackgroundSequence } from './backgroundSequence.js';
-import { renderBackgroundRotation } from './backgroundRotationRender.js';
+import { renderBackgroundRotationSegments } from './backgroundRotationRender.js';
 import { buildFilterComplex, buildAudioFilterComplex } from './videoComposition.js';
 import { resolveStyle } from './styleConfig.js';
 import { computeIntroTimingWindow } from './introTiming.js';
@@ -50,6 +49,7 @@ function composeVideo({ inputs, durationSeconds, outputPath, filterComplex, audi
   for (const input of inputs) {
     if (input.streamLoop) args.push('-stream_loop', '-1', '-t', String(input.duration));
     if (input.loop) args.push('-loop', '1');
+    if (input.concatList) args.push('-f', 'concat', '-safe', '0');
     args.push('-i', input.path);
   }
   args.push(
@@ -116,8 +116,8 @@ function composeVideo({ inputs, durationSeconds, outputPath, filterComplex, audi
  * Resolves the background: either a static placeholder image (default,
  * unchanged from steps 1-4) or a real rotating clip pool with crossfades,
  * when background.clipIds is non-empty. The multi-clip case is
- * pre-flattened to a single video file by renderBackgroundRotation before
- * the main composition ever runs.
+ * pre-rendered into short segments (joined by an ffmpeg concat list, see
+ * renderBackgroundRotationSegments) before the main composition ever runs.
  *
  * This was NOT the first thing tried: a single long xfade chain (one real
  * ffmpeg input per instance, the original approach) measured ~3GB peak
@@ -165,8 +165,13 @@ async function resolveBackground({ background, totalDurationSeconds, canvasWidth
     transitionDurationSeconds,
   });
 
-  const flattenedPath = path.join(tmpDir, `bg-flattened-${randomUUID()}.mp4`);
-  await renderBackgroundRotation({
+  // The rotation is rendered as short segments and handed to the main
+  // composition as an ffmpeg concat list (see renderBackgroundRotationSegments)
+  // -- NOT joined into one flattened file first. That second full-size copy,
+  // alongside the segments, is what overran the container's 18GB temp-disk
+  // cap on long 4K exports. The caller must call `cleanup` once the
+  // composition is finished (or has failed) to delete the segments.
+  const { listPath, cleanup } = await renderBackgroundRotationSegments({
     instances,
     cachedPaths,
     slotDurationSeconds,
@@ -175,16 +180,15 @@ async function resolveBackground({ background, totalDurationSeconds, canvasWidth
     canvasWidth,
     canvasHeight,
     tmpDir,
-    outputPath: flattenedPath,
   });
 
-  // No loop flag needed: renderBackgroundRotation already produces a real
-  // video covering at least totalDurationSeconds (planBackgroundSequence's
-  // own contract), and composeVideo's outer `-t totalDurationSeconds`
-  // truncates to the exact target length regardless. `-loop 1` (used by the
-  // static-placeholder case above) is a still-image-only ffmpeg option and
-  // errors out ("Option loop not found") on a real video demuxer.
-  return { inputs: [{ path: flattenedPath }], backgroundInputLabel: '0:v', flattenedPath };
+  // No loop flag needed: the segments already cover at least
+  // totalDurationSeconds (planBackgroundSequence's own contract), and
+  // composeVideo's outer `-t totalDurationSeconds` truncates to the exact
+  // target length regardless. `-loop 1` (used by the static-placeholder case
+  // above) is a still-image-only ffmpeg option and errors out on a real
+  // video demuxer.
+  return { inputs: [{ path: listPath, concatList: true }], backgroundInputLabel: '0:v', cleanup };
 }
 
 /**
@@ -331,174 +335,183 @@ export async function runSurahExport({
   );
 
   report('downloading-background');
-  const { inputs: backgroundInputs, backgroundInputLabel, flattenedPath: backgroundFlattenedPath } = await resolveBackground({
+  const { inputs: backgroundInputs, backgroundInputLabel, cleanup: cleanupBackground } = await resolveBackground({
     background: backgroundOverrides,
     totalDurationSeconds,
     canvasWidth,
     canvasHeight,
     tmpDir: TMP_DIR,
   });
+  // Anything that fails after the background segments exist (logo/card
+  // resolution, filter building, the encode itself) must still delete them --
+  // they are potentially many GB on a disk that has a hard cap. cleanup is
+  // idempotent, so the encode step's own finally can call it too.
+  try {
 
-  const hasLogo = style.badges.channelLogo.enabled;
-  let logoPath = null;
-  if (hasLogo) {
-    const logoId = style.badges.channelLogo.logoId;
-    if (logoId) {
-      try {
-        logoPath = resolveUploadedLogoPath(logoId, LOGO_UPLOADS_DIR);
-      } catch (err) {
-        console.warn(`[surahExport] uploaded logo "${logoId}" unavailable (${err.message}), falling back to placeholder`);
+    const hasLogo = style.badges.channelLogo.enabled;
+    let logoPath = null;
+    if (hasLogo) {
+      const logoId = style.badges.channelLogo.logoId;
+      if (logoId) {
+        try {
+          logoPath = resolveUploadedLogoPath(logoId, LOGO_UPLOADS_DIR);
+        } catch (err) {
+          console.warn(`[surahExport] uploaded logo "${logoId}" unavailable (${err.message}), falling back to placeholder`);
+        }
+      }
+      if (!logoPath) {
+        logoPath = ensurePlaceholderLogo(LOGOS_DIR, FONTS_DIR);
       }
     }
-    if (!logoPath) {
-      logoPath = ensurePlaceholderLogo(LOGOS_DIR, FONTS_DIR);
+
+    // Input order: [0..k-1]=background clip(s), k=main audio, [k+1=bismillah audio], [logo].
+    const inputs = [...backgroundInputs, { path: audioPath }];
+    const mainAudioInputLabel = `${backgroundInputs.length}:a`;
+    let bismillahAudioInputLabel = null;
+    if (bismillahAudioPath) {
+      bismillahAudioInputLabel = `${inputs.length}:a`;
+      inputs.push({ path: bismillahAudioPath });
     }
-  }
+    let logoInputLabel = null;
+    if (logoPath) {
+      logoInputLabel = `${inputs.length}:v`;
+      inputs.push({ path: logoPath });
+    }
 
-  // Input order: [0..k-1]=background clip(s), k=main audio, [k+1=bismillah audio], [logo].
-  const inputs = [...backgroundInputs, { path: audioPath }];
-  const mainAudioInputLabel = `${backgroundInputs.length}:a`;
-  let bismillahAudioInputLabel = null;
-  if (bismillahAudioPath) {
-    bismillahAudioInputLabel = `${inputs.length}:a`;
-    inputs.push({ path: bismillahAudioPath });
-  }
-  let logoInputLabel = null;
-  if (logoPath) {
-    logoInputLabel = `${inputs.length}:v`;
-    inputs.push({ path: logoPath });
-  }
+    // Optional per-card background override: falls back to the main
+    // background (i.e. no extra input, no overlay stage) if unset or if the
+    // referenced clip/image can no longer be resolved (e.g. a stale id from a
+    // since-deleted upload).
+    let introBackgroundInputLabel = null;
+    if (introOverrides.cardBackgroundClipId && introWindowTiming.windowMs > 0) {
+      try {
+        const input = await resolveCardBackgroundInput(introOverrides.cardBackgroundClipId, introWindowTiming.windowMs / 1000);
+        introBackgroundInputLabel = `${inputs.length}:v`;
+        inputs.push(input);
+      } catch (err) {
+        console.warn(`[surahExport] intro card background "${introOverrides.cardBackgroundClipId}" unavailable (${err.message}), using main background instead`);
+      }
+    }
 
-  // Optional per-card background override: falls back to the main
-  // background (i.e. no extra input, no overlay stage) if unset or if the
-  // referenced clip/image can no longer be resolved (e.g. a stale id from a
-  // since-deleted upload).
-  let introBackgroundInputLabel = null;
-  if (introOverrides.cardBackgroundClipId && introWindowTiming.windowMs > 0) {
+    let outroBackgroundInputLabel = null;
+    if (outroOverrides.cardBackgroundClipId && outroDurationSeconds > 0) {
+      try {
+        const input = await resolveCardBackgroundInput(outroOverrides.cardBackgroundClipId, outroDurationSeconds);
+        outroBackgroundInputLabel = `${inputs.length}:v`;
+        inputs.push(input);
+      } catch (err) {
+        console.warn(`[surahExport] outro card background "${outroOverrides.cardBackgroundClipId}" unavailable (${err.message}), using main background instead`);
+      }
+    }
+
+    const introOverlayOpacity = Math.min(1, Math.max(0, Number(introOverrides.overlayOpacity ?? 0.55)));
+    const introWindow = {
+      windowMs: introWindowTiming.windowMs,
+      showBismillahText: bismillahTextEnabled,
+      bismillahText: bismillahArabicText,
+      showIntroCard: introCardEnabled,
+      cardText: { line1: chapter.name_simple, line2: `${chapter.translated_name.name} • ${chapter.id}` },
+      overlayOpacity: introOverlayOpacity,
+    };
+
+    // Badge/card text (surah names, channel name, custom card text) is
+    // written to temp files rather than embedded as a `text=` value -- see
+    // videoComposition.js's textFileArg for why (a real crash on a surah name
+    // starting with an apostrophe, "'Abasa"). Collected here so they can be
+    // deleted once the render finishes, same as the background segments.
+    const drawtextTempFiles = [];
+    const videoFilterComplex = buildFilterComplex({
+      style,
+      assPath,
+      fontsDir: FONTS_DIR,
+      surahBadgeText: {
+        line1: chapter.name_simple,
+        line2: `${chapter.translated_name.name} • ${chapter.id}`,
+        arabicName: chapter.name_arabic,
+      },
+      logoInputLabel,
+      introWindow,
+      outroWindow,
+      introBackgroundInputLabel,
+      outroBackgroundInputLabel,
+      backgroundInputLabel,
+      canvasWidth,
+      canvasHeight,
+      scaleFactor,
+      totalDurationSeconds,
+      tmpDir: TMP_DIR,
+      tempFiles: drawtextTempFiles,
+    });
+
+    const { audioFilterParts, audioOutLabel } = buildAudioFilterComplex({
+      mainAudioInputLabel,
+      bismillahAudioInputLabel,
+      introWindow,
+      audioSyncOffsetMs,
+      volumeMultiplier,
+    });
+
+    // composeVideo passes both -t and -shortest, so if the audio track's own
+    // samples end before totalDurationSeconds (e.g. verseDisplayDelayMs pushed
+    // the *captions* later without touching the audio itself), -shortest would
+    // truncate the output at the audio's natural end and cut off the tail
+    // captions. Padding with silence up to the real target duration makes the
+    // audio stream itself long enough so -shortest never fires early.
+    const paddedAudioParts = [
+      ...audioFilterParts,
+      `[${audioOutLabel}]apad=whole_dur=${totalDurationSeconds.toFixed(3)}[audioPadded]`,
+    ];
+    const finalAudioOutLabel = 'audioPadded';
+
+    const filterComplex = [videoFilterComplex, ...paddedAudioParts].join(';');
+    const audioMapLabel = `[${finalAudioOutLabel}]`;
+
+    report('encoding', 0);
     try {
-      const input = await resolveCardBackgroundInput(introOverrides.cardBackgroundClipId, introWindowTiming.windowMs / 1000);
-      introBackgroundInputLabel = `${inputs.length}:v`;
-      inputs.push(input);
-    } catch (err) {
-      console.warn(`[surahExport] intro card background "${introOverrides.cardBackgroundClipId}" unavailable (${err.message}), using main background instead`);
+      await composeVideo({
+        inputs,
+        durationSeconds: totalDurationSeconds,
+        outputPath,
+        filterComplex,
+        audioMapLabel,
+        onProgress: (fraction) => report('encoding', fraction),
+      });
+    } finally {
+      // The rotation's segments are real (potentially many-GB) intermediate
+      // files in TMP_DIR, unlike the tiny .ass subtitle file next to it --
+      // worth cleaning up explicitly rather than letting them accumulate
+      // across exports.
+      cleanupBackground?.();
+      for (const filePath of drawtextTempFiles) fs.rmSync(filePath, { force: true });
     }
-  }
 
-  let outroBackgroundInputLabel = null;
-  if (outroOverrides.cardBackgroundClipId && outroDurationSeconds > 0) {
-    try {
-      const input = await resolveCardBackgroundInput(outroOverrides.cardBackgroundClipId, outroDurationSeconds);
-      outroBackgroundInputLabel = `${inputs.length}:v`;
-      inputs.push(input);
-    } catch (err) {
-      console.warn(`[surahExport] outro card background "${outroOverrides.cardBackgroundClipId}" unavailable (${err.message}), using main background instead`);
-    }
-  }
+    const srtPath = outputPath.replace(/\.mp4$/, '.srt');
+    fs.writeFileSync(srtPath, buildSrt(shiftedCaptionData, introWindow), 'utf8');
 
-  const introOverlayOpacity = Math.min(1, Math.max(0, Number(introOverrides.overlayOpacity ?? 0.55)));
-  const introWindow = {
-    windowMs: introWindowTiming.windowMs,
-    showBismillahText: bismillahTextEnabled,
-    bismillahText: bismillahArabicText,
-    showIntroCard: introCardEnabled,
-    cardText: { line1: chapter.name_simple, line2: `${chapter.translated_name.name} • ${chapter.id}` },
-    overlayOpacity: introOverlayOpacity,
-  };
+    report('probing');
+    const outputProbe = await probe(outputPath);
+    report('done', 1);
 
-  // Badge/card text (surah names, channel name, custom card text) is
-  // written to temp files rather than embedded as a `text=` value -- see
-  // videoComposition.js's textFileArg for why (a real crash on a surah name
-  // starting with an apostrophe, "'Abasa"). Collected here so they can be
-  // deleted once the render finishes, same as the flattened background.
-  const drawtextTempFiles = [];
-  const videoFilterComplex = buildFilterComplex({
-    style,
-    assPath,
-    fontsDir: FONTS_DIR,
-    surahBadgeText: {
-      line1: chapter.name_simple,
-      line2: `${chapter.translated_name.name} • ${chapter.id}`,
-      arabicName: chapter.name_arabic,
-    },
-    logoInputLabel,
-    introWindow,
-    outroWindow,
-    introBackgroundInputLabel,
-    outroBackgroundInputLabel,
-    backgroundInputLabel,
-    canvasWidth,
-    canvasHeight,
-    scaleFactor,
-    totalDurationSeconds,
-    tmpDir: TMP_DIR,
-    tempFiles: drawtextTempFiles,
-  });
-
-  const { audioFilterParts, audioOutLabel } = buildAudioFilterComplex({
-    mainAudioInputLabel,
-    bismillahAudioInputLabel,
-    introWindow,
-    audioSyncOffsetMs,
-    volumeMultiplier,
-  });
-
-  // composeVideo passes both -t and -shortest, so if the audio track's own
-  // samples end before totalDurationSeconds (e.g. verseDisplayDelayMs pushed
-  // the *captions* later without touching the audio itself), -shortest would
-  // truncate the output at the audio's natural end and cut off the tail
-  // captions. Padding with silence up to the real target duration makes the
-  // audio stream itself long enough so -shortest never fires early.
-  const paddedAudioParts = [
-    ...audioFilterParts,
-    `[${audioOutLabel}]apad=whole_dur=${totalDurationSeconds.toFixed(3)}[audioPadded]`,
-  ];
-  const finalAudioOutLabel = 'audioPadded';
-
-  const filterComplex = [videoFilterComplex, ...paddedAudioParts].join(';');
-  const audioMapLabel = `[${finalAudioOutLabel}]`;
-
-  report('encoding', 0);
-  try {
-    await composeVideo({
-      inputs,
+    return {
+      chapter,
+      captionData: shiftedCaptionData,
+      style,
+      introWindow: introWindowTiming,
+      outroWindow,
+      audioSourceUrl: audioFile.audio_url,
+      bismillahAudioDurationMs,
+      audioSyncOffsetMs,
+      resolution,
+      aspectRatio,
+      canvasWidth,
+      canvasHeight,
       durationSeconds: totalDurationSeconds,
       outputPath,
-      filterComplex,
-      audioMapLabel,
-      onProgress: (fraction) => report('encoding', fraction),
-    });
-  } finally {
-    // The flattened rotation is a real (potentially large) intermediate
-    // video file in TMP_DIR, unlike the tiny .ass subtitle file next to it
-    // -- worth cleaning up explicitly rather than letting it accumulate
-    // across exports.
-    if (backgroundFlattenedPath) fs.rmSync(backgroundFlattenedPath, { force: true });
-    for (const filePath of drawtextTempFiles) fs.rmSync(filePath, { force: true });
+      srtPath,
+      outputProbe,
+    };
+  } catch (err) {
+    cleanupBackground?.();
+    throw err;
   }
-
-  const srtPath = outputPath.replace(/\.mp4$/, '.srt');
-  fs.writeFileSync(srtPath, buildSrt(shiftedCaptionData, introWindow), 'utf8');
-
-  report('probing');
-  const outputProbe = await probe(outputPath);
-  report('done', 1);
-
-  return {
-    chapter,
-    captionData: shiftedCaptionData,
-    style,
-    introWindow: introWindowTiming,
-    outroWindow,
-    audioSourceUrl: audioFile.audio_url,
-    bismillahAudioDurationMs,
-    audioSyncOffsetMs,
-    resolution,
-    aspectRatio,
-    canvasWidth,
-    canvasHeight,
-    durationSeconds: totalDurationSeconds,
-    outputPath,
-    srtPath,
-    outputProbe,
-  };
 }

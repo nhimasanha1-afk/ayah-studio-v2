@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { renderBackgroundRotation, TRANSITION_STYLES } from '../src/lib/backgroundRotationRender.js';
+import { renderBackgroundRotation, renderBackgroundRotationSegments, chooseSegmentCrf, TRANSITION_STYLES } from '../src/lib/backgroundRotationRender.js';
 import { planBackgroundSequence } from '../src/lib/backgroundSequence.js';
 import { probe } from '../src/lib/ffmpeg.js';
 import { ffmpegPath } from '../src/lib/ffmpegBinaries.js';
@@ -219,5 +219,93 @@ test('renderBackgroundRotation never opens more than 2 real clip inputs at once,
     assert.ok(fs.existsSync(outputPath));
     const info = await probe(outputPath);
     assert.ok(Number(info.format.duration) > 0);
+  });
+});
+
+// Real production failure: the container's own disk has a hard 18GB cap and a
+// 33-minute 4K export wrote ~16GB of segments plus a second ~16GB flattened
+// copy, killing the instance twice. Measured on a real 4K segment: ultrafast
+// at the default CRF 23 is ~8MB/s; CRF 26 is ~5.6MB/s, ~11% smaller per step.
+test('chooseSegmentCrf keeps a 33-minute 4K rotation well inside the temp-disk budget (it was ~16GB before)', () => {
+  const { crf, estimatedBytes } = chooseSegmentCrf({ durationSeconds: 2008, canvasWidth: 3840, canvasHeight: 2160 });
+  assert.ok(crf >= 26, `crf ${crf}`);
+  assert.ok(estimatedBytes < 12e9, `estimated ${(estimatedBytes / 1e9).toFixed(1)}GB should be well under the 18GB cap`);
+});
+
+test('chooseSegmentCrf leaves ordinary exports at the base quality and compresses harder only as needed', () => {
+  assert.equal(chooseSegmentCrf({ durationSeconds: 300, canvasWidth: 1280, canvasHeight: 720 }).crf, 26);
+  const long = chooseSegmentCrf({ durationSeconds: 3600, canvasWidth: 3840, canvasHeight: 2160 });
+  assert.ok(long.crf > 26 && long.estimatedBytes <= 10e9, `crf ${long.crf}, ${(long.estimatedBytes / 1e9).toFixed(1)}GB`);
+});
+
+test('chooseSegmentCrf refuses a rotation too large for the disk with a clear message instead of letting the instance die', () => {
+  assert.throws(
+    () => chooseSegmentCrf({ durationSeconds: 3 * 3600, canvasWidth: 3840, canvasHeight: 2160 }),
+    /lower resolution|shorter chapter/
+  );
+});
+
+test('renderBackgroundRotationSegments returns a concat list of every segment and a cleanup that deletes them all', async () => {
+  await withTempDir(async (dir) => {
+    const clipA = makeColorClip(dir, 'a.mp4', 'red');
+    const clipB = makeColorClip(dir, 'b.mp4', 'blue');
+    const instances = planBackgroundSequence({
+      orderedClips: ['a', 'b', 'a'],
+      totalDurationSeconds: 5,
+      slotDurationSeconds: 2,
+      transitionDurationSeconds: 0.5,
+    });
+    const tmpDir = path.join(dir, 'tmp');
+    const { listPath, cleanup } = await renderBackgroundRotationSegments({
+      instances,
+      cachedPaths: new Map([['a', clipA], ['b', clipB]]),
+      slotDurationSeconds: 2,
+      transitionDurationSeconds: 0.5,
+      transitionStyle: 'fade',
+      canvasWidth: 64,
+      canvasHeight: 64,
+      tmpDir,
+    });
+    const listed = fs.readFileSync(listPath, 'utf8').trim().split('\n');
+    assert.equal(listed.length, instances.length);
+    for (const line of listed) {
+      const segPath = line.replace(/^file '/, '').replace(/'$/, '');
+      assert.ok(fs.existsSync(segPath), `segment missing: ${segPath}`);
+    }
+    // The concat list itself must be directly usable as an ffmpeg input
+    // (that's how the export reads it, with no second flattened copy).
+    const out = path.join(dir, 'joined.mp4');
+    const res = spawnSync(ffmpegPath, ['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', out]);
+    assert.equal(res.status, 0, String(res.stderr));
+    assert.ok(Number((await probe(out)).format.duration) > 3);
+
+    cleanup();
+    assert.ok(!fs.existsSync(tmpDir) || fs.readdirSync(tmpDir).length === 0, 'cleanup must delete every segment');
+  });
+});
+
+test('renderBackgroundRotationSegments cleans up its own scratch when a segment fails, rather than leaking it', async () => {
+  await withTempDir(async (dir) => {
+    const clipA = makeColorClip(dir, 'a.mp4', 'red');
+    const instances = planBackgroundSequence({
+      orderedClips: ['a', 'missing'],
+      totalDurationSeconds: 4,
+      slotDurationSeconds: 2,
+      transitionDurationSeconds: 0.5,
+    });
+    const tmpDir = path.join(dir, 'tmp');
+    await assert.rejects(() =>
+      renderBackgroundRotationSegments({
+        instances,
+        cachedPaths: new Map([['a', clipA], ['missing', path.join(dir, 'nope.mp4')]]),
+        slotDurationSeconds: 2,
+        transitionDurationSeconds: 0.5,
+        transitionStyle: 'fade',
+        canvasWidth: 64,
+        canvasHeight: 64,
+        tmpDir,
+      })
+    );
+    assert.ok(!fs.existsSync(tmpDir) || fs.readdirSync(tmpDir).length === 0, 'failed render must not leave segments behind');
   });
 });
